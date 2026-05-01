@@ -2,7 +2,7 @@ package render
 
 import (
 	"bytes"
-	"easyserver/utils"
+	"easyserver/infra/format"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -168,7 +168,7 @@ func RenderDirectoryIndex(basePath string, entries []os.DirEntry, relPath string
 		if !entry.IsDir() {
 			if info, err := entry.Info(); err == nil {
 
-				size = utils.HumanizeBytes(info.Size())
+				size = format.HumanizeBytes(info.Size())
 			} else {
 				size = "–"
 			}

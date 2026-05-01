@@ -1,7 +1,7 @@
 package render
 
 import (
-	"easyserver/utils"
+	"easyserver/infra/format"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,7 +17,7 @@ import (
 // 	"os"
 // 	"path/filepath"
 // 	"regexp"
-// 	"easyserver/utils"
+// 	"easyserver/infra/format"
 // 	"strings"
 // 	"text/template"
 // 	"unicode"
@@ -1233,7 +1233,7 @@ func ToHTML(path string) (string, error) {
 	generator.DontEnhanceURLs = true
 	generator.IsFile = true
 	metadata := fmt.Sprintf("| Property | Value |\n|---|---|\n| Size | %s |\n| Modified | %s |",
-		utils.HumanizeBytes(info.Size()),
+		format.HumanizeBytes(info.Size()),
 		info.ModTime().Format("2006/01/02 15:04:05"),
 	)
 	header := "" // fmt.Sprintf("[Home](/)\n\n[Back](%s)\n\n## Index of %s\n\n", filepath.Dir(relPath), relPath)
@@ -1333,7 +1333,7 @@ func ToHTML(path string) (string, error) {
 // 		if !entry.IsDir() {
 // 			if info, err := entry.Info(); err == nil {
 
-// 				size = utils.HumanizeBytes(info.Size())
+// 				size = format.HumanizeBytes(info.Size())
 // 			} else {
 // 				size = "–"
 // 			}

@@ -2,7 +2,7 @@ package render
 
 import (
 	"bytes"
-	"easyserver/utils"
+	"easyserver/infra/format"
 	"encoding/base64"
 	"fmt"
 	"html"
@@ -1231,7 +1231,7 @@ func toHTML(path string) (string, error) {
 	generator.DontEnhanceURLs = true
 	generator.IsFile = true
 	metadata := fmt.Sprintf("| Property | Value |\n|---|---|\n| Size | %s |\n| Modified | %s |",
-		utils.HumanizeBytes(info.Size()),
+		format.HumanizeBytes(info.Size()),
 		info.ModTime().Format("2006/01/02 15:04:05"),
 	)
 	header := "" // fmt.Sprintf("[Home](/)\n\n[Back](%s)\n\n## Index of %s\n\n", filepath.Dir(relPath), relPath)
@@ -1331,7 +1331,7 @@ func renderDirectoryIndex(basePath string, entries []os.DirEntry, relPath string
 		if !entry.IsDir() {
 			if info, err := entry.Info(); err == nil {
 
-				size = utils.HumanizeBytes(info.Size())
+				size = format.HumanizeBytes(info.Size())
 			} else {
 				size = "–"
 			}
