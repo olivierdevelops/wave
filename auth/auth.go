@@ -2,6 +2,7 @@
 package auth
 
 import (
+	"easyserver/domain"
 	"errors"
 	"fmt"
 	"net/http"
@@ -12,6 +13,10 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 )
+
+type User = domain.User
+type PublicUser = domain.PublicUser
+type Session = domain.Session
 
 type ResponseRenderer func(w http.ResponseWriter, r *http.Request, data interface{}) error
 
@@ -151,22 +156,6 @@ func getSameSitePolicy(configValue string, isSecure bool) http.SameSite {
 	}
 }
 
-type User struct {
-	ID        int       `json:"id"`
-	Username  string    `json:"username"`
-	Password  []byte    `json:"-"`
-	CreatedAt time.Time `json:"created_at"`
-	IsDefault bool      `json:"is_default"` // Flag to identify default users
-}
-
-type Session struct {
-	ID        string    `json:"id"`
-	UserID    string    `json:"user_id"`
-	CreatedAt time.Time `json:"created_at"`
-	ExpiresAt time.Time `json:"expires_at"`
-	Revoked   bool      `json:"revoked"`
-}
-
 type UserStore interface {
 	GetUserByID(id int) (*User, error)
 	GetUserByUsername(username string) (*User, error)
@@ -237,11 +226,6 @@ const (
 	AuthConfigKey      contextKey = "auth_config"
 	OriginalRequestKey contextKey = "original_request"
 )
-
-type PublicUser struct {
-	ID       int    `json:"id"`
-	Username string `json:"username"`
-}
 
 func IsBrowserRequest(r *http.Request) bool {
 	acceptHeader := r.Header.Get("Accept")

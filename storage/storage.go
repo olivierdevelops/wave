@@ -2,22 +2,15 @@ package storage
 
 import (
 	"easyserver/contentloader"
+	"easyserver/domain"
 	"fmt"
 )
 
+type StorageConfig = domain.StorageConfig
+type TableDef = domain.TableDef
+
 type Config struct {
 	Storage map[string]StorageConfig `yaml:"storage"`
-}
-
-type StorageConfig struct {
-	Path   string               `yaml:"path"`
-	Tables map[string]*TableDef `yaml:"tables"`
-	Type   string               `yaml:"type"`
-}
-
-type TableDef struct {
-	Columns []string `yaml:"columns"`
-	Source  string   `yaml:"source"`
 }
 
 type StorageRef interface {

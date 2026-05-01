@@ -2,6 +2,7 @@ package contentloader
 
 import (
 	"easyserver/auth"
+	"easyserver/domain"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,6 +12,9 @@ import (
 	"os"
 	"strings"
 )
+
+type File = domain.File
+type Reader = domain.FileReader
 
 type ContentLoader interface {
 	GetValue(name string) (any, error)
@@ -54,17 +58,6 @@ type FormDataContentLoader struct {
 // func ()  {
 
 // }
-
-type File struct {
-	Filename string
-	Size     int64
-	// Header   textproto.MIMEHeader
-	Reader Reader
-}
-
-type Reader interface {
-	Open() (io.ReadCloser, error)
-}
 
 type MultipartReader struct {
 	file *multipart.FileHeader
