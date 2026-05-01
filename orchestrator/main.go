@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"easyserver/net"
+	"easyserver/infra/net"
 	"easyserver/servers"
 
 	log "easyserver/infra/logger"

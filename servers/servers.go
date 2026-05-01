@@ -15,7 +15,7 @@ import (
 	"easyserver/auth"
 	"easyserver/bundler"
 	"easyserver/ipfilter"
-	"easyserver/net"
+	"easyserver/infra/net"
 	"easyserver/infra/common"
 	"easyserver/routes"
 	"easyserver/storage"
