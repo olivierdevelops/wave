@@ -1,8 +1,8 @@
-package storage
+package sqlite
 
 import (
 	"database/sql"
-	"easyserver/orchestrator/features/auth"
+	"easyserver/domain"
 	"easyserver/io/http/contentloader"
 	"easyserver/infra/common"
 	"fmt"
@@ -42,7 +42,7 @@ type ExecuteResult struct {
 	Row    *sql.Row
 	Result sql.Result
 	Input  any
-	User   *auth.PublicUser
+	User   *domain.PublicUser
 
 	// Processed results
 	Data interface{} // Can be map[string]any, []map[string]any, or scalar value
@@ -344,7 +344,7 @@ func (ref *SQLiteStorageRef) GetDB() *sql.DB {
 	return ref.db
 }
 
-func setupSQLITE(storage *StorageConfig) (StorageRef, error) {
+func Setup(storage *domain.StorageConfig) (*SQLiteStorageRef, error) {
 	printCounter("Create directory if it doesn't exist")
 
 	// Create directory if it doesn't exist
@@ -408,7 +408,7 @@ func setupSQLITE(storage *StorageConfig) (StorageRef, error) {
 // 	return nil
 // }
 
-func createTable(db *sql.DB, tableName string, tableDef *TableDef) error {
+func createTable(db *sql.DB, tableName string, tableDef *domain.TableDef) error {
 	if tableDef == nil {
 		return fmt.Errorf("table definition is nil for table %s", tableName)
 	}
@@ -534,11 +534,11 @@ func (ref *SQLiteStorageRef) Execute(sqlStatement string, data *contentloader.Da
 			params = append(params, value)
 			return "?"
 		},
-		"getUser": func() *auth.PublicUser {
+		"getUser": func() *domain.PublicUser {
 			user, err := data.GetUser()
 			if err != nil {
 				renderErr = err
-				return &auth.PublicUser{}
+				return &domain.PublicUser{}
 			}
 			return user
 		},

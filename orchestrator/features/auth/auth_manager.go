@@ -4,6 +4,7 @@ package auth
 import (
 	"context"
 	"easyserver/infra/common"
+	"easyserver/infra/users"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -99,12 +100,12 @@ func NewAuthManager(configs map[string]*AuthConfig, jwtSecret string) (*AuthMana
 				os.MkdirAll(StorageDir, 0755)
 				path = filepath.Join(StorageDir, fmt.Sprintf("%s_storage.db", key))
 			}
-			store, err = NewSQLiteUserStore(path)
+			store, err = users.NewSQLiteUserStore(path)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create SQLite store for %s: %w", key, err)
 			}
 		case "memory", "":
-			store = NewInMemoryUserStore()
+			store = users.NewInMemoryUserStore()
 		default:
 			return nil, fmt.Errorf("invalid user store type: %s", config.UserStore)
 		}

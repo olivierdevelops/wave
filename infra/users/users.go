@@ -1,7 +1,8 @@
 // ./easyserver/auth/store.go
-package auth
+package users
 
 import (
+	"easyserver/domain"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -20,21 +21,21 @@ var (
 
 // InMemoryUserStore
 type InMemoryUserStore struct {
-	users       map[int]*User
-	usersByName map[string]*User
+	users       map[int]*domain.User
+	usersByName map[string]*domain.User
 	nextID      int
 	mu          sync.RWMutex
 }
 
 func NewInMemoryUserStore() *InMemoryUserStore {
 	return &InMemoryUserStore{
-		users:       make(map[int]*User),
-		usersByName: make(map[string]*User),
+		users:       make(map[int]*domain.User),
+		usersByName: make(map[string]*domain.User),
 		nextID:      1,
 	}
 }
 
-func (s *InMemoryUserStore) GetUserByID(id int) (*User, error) {
+func (s *InMemoryUserStore) GetUserByID(id int) (*domain.User, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -47,7 +48,7 @@ func (s *InMemoryUserStore) GetUserByID(id int) (*User, error) {
 	return &userCopy, nil
 }
 
-func (s *InMemoryUserStore) GetUserByUsername(username string) (*User, error) {
+func (s *InMemoryUserStore) GetUserByUsername(username string) (*domain.User, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -74,7 +75,7 @@ func (s *InMemoryUserStore) ValidatePassword(username, password string) error {
 	return nil
 }
 
-func (s *InMemoryUserStore) CreateUser(username string, hashedPassword []byte) (*User, error) {
+func (s *InMemoryUserStore) CreateUser(username string, hashedPassword []byte) (*domain.User, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -82,7 +83,7 @@ func (s *InMemoryUserStore) CreateUser(username string, hashedPassword []byte) (
 		return nil, ErrUserAlreadyExists
 	}
 
-	user := &User{
+	user := &domain.User{
 		ID:        s.nextID,
 		Username:  username,
 		Password:  hashedPassword,
@@ -152,13 +153,13 @@ func (s *SQLiteUserStore) initSchema() error {
 	return err
 }
 
-func (s *SQLiteUserStore) GetUserByID(id int) (*User, error) {
+func (s *SQLiteUserStore) GetUserByID(id int) (*domain.User, error) {
 	query := `SELECT id, username, password, created_at FROM users WHERE id = ?`
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	var user User
+	var user domain.User
 	var createdAtStr string
 
 	err := s.db.QueryRow(query, id).Scan(
@@ -181,13 +182,13 @@ func (s *SQLiteUserStore) GetUserByID(id int) (*User, error) {
 	return &user, nil
 }
 
-func (s *SQLiteUserStore) GetUserByUsername(username string) (*User, error) {
+func (s *SQLiteUserStore) GetUserByUsername(username string) (*domain.User, error) {
 	query := `SELECT id, username, password, created_at FROM users WHERE username = ?`
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	var user User
+	var user domain.User
 	var createdAtStr string
 
 	err := s.db.QueryRow(query, username).Scan(
@@ -224,7 +225,7 @@ func (s *SQLiteUserStore) ValidatePassword(username, password string) error {
 	return nil
 }
 
-func (s *SQLiteUserStore) CreateUser(username string, hashedPassword []byte) (*User, error) {
+func (s *SQLiteUserStore) CreateUser(username string, hashedPassword []byte) (*domain.User, error) {
 	query := `INSERT INTO users (username, password) VALUES (?, ?)`
 
 	s.mu.Lock()
@@ -247,7 +248,7 @@ func (s *SQLiteUserStore) CreateUser(username string, hashedPassword []byte) (*U
 		return nil, fmt.Errorf("failed to get last insert ID: %w", err)
 	}
 
-	return &User{
+	return &domain.User{
 		ID:        int(id),
 		Username:  username,
 		Password:  hashedPassword,

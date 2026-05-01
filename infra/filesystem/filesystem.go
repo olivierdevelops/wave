@@ -1,10 +1,11 @@
-package storage
+package filesystem
 
 import (
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"easyserver/domain"
 	"easyserver/infra/common"
 	"easyserver/io/http/contentloader"
 	"strings"
@@ -159,7 +160,7 @@ func (ref *FilesystemStorageRef) Execute(command string, data *contentloader.Dat
 	return outputData, nil
 }
 
-func setupFileSystem(storage *StorageConfig) (StorageRef, error) {
+func Setup(storage *domain.StorageConfig) (*FilesystemStorageRef, error) {
 
 	// Create directory if it doesn't exist
 	dir := storage.Path
