@@ -4,6 +4,7 @@ package auth
 import (
 	"context"
 	"easyserver/infra/common"
+	infrajwt "easyserver/infra/jwt"
 	"easyserver/infra/users"
 	"encoding/json"
 	"fmt"
@@ -14,7 +15,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -462,15 +462,8 @@ func (am *AuthManager) Logout(r *http.Request, auth string) *LogoutResponse {
 		}
 	}
 
-	claims := &Claims{}
-	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("unexpected signing method")
-		}
-		return am.jwtSecret, nil
-	})
-
-	if err == nil && token.Valid && claims.SessionID != "" {
+	claims, err := infrajwt.Parse(am.jwtSecret, tokenString)
+	if err == nil && claims.SessionID != "" {
 		// Revoke the session
 		if sessionStore, ok := am.sessionStores[auth]; ok {
 			sessionStore.RevokeSession(claims.SessionID)
@@ -493,22 +486,7 @@ func (am *AuthManager) Logout(r *http.Request, auth string) *LogoutResponse {
 }
 
 func (am *AuthManager) GenerateJWT(user *User, sessionID string, expiry time.Duration) (string, error) {
-	now := time.Now()
-	claims := &Claims{
-		UserID:    user.ID,
-		Username:  user.Username,
-		SessionID: sessionID,
-		Time:      jwt.NewNumericDate(now),
-		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(now.Add(expiry)),
-			IssuedAt:  jwt.NewNumericDate(now),
-			NotBefore: jwt.NewNumericDate(now),
-			Subject:   user.Username,
-		},
-	}
-
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(am.jwtSecret)
+	return infrajwt.Sign(am.jwtSecret, user.ID, user.Username, sessionID, expiry)
 }
 
 func (am *AuthManager) createSession(userID string, duration time.Duration) (string, error) {

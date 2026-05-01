@@ -2,11 +2,10 @@
 package auth
 
 import (
+	infrajwt "easyserver/infra/jwt"
 	"fmt"
 	"net/http"
 	"strings"
-
-	"github.com/golang-jwt/jwt/v5"
 )
 
 type AuthenticationResponse struct {
@@ -50,20 +49,9 @@ func (am *AuthManager) authenticateJWT(r *http.Request, config *AuthConfig) (*Us
 		return nil, fmt.Errorf("token extraction failed: %w", err)
 	}
 
-	claims := &Claims{}
-	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
-		}
-		return am.jwtSecret, nil
-	})
-
+	claims, err := infrajwt.Parse(am.jwtSecret, tokenString)
 	if err != nil {
 		return nil, fmt.Errorf("token parse error: %w", err)
-	}
-
-	if !token.Valid {
-		return nil, fmt.Errorf("invalid token")
 	}
 
 	// Validate session

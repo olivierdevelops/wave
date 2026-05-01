@@ -3,20 +3,19 @@ package auth
 
 import (
 	"easyserver/domain"
-	"errors"
-	"fmt"
+	"easyserver/infra/cookies"
+	infrajwt "easyserver/infra/jwt"
+	"easyserver/infra/sessions"
 	"net/http"
 	"os"
 	"strings"
-	"sync"
 	"time"
-
-	"github.com/golang-jwt/jwt/v5"
 )
 
 type User = domain.User
 type PublicUser = domain.PublicUser
 type Session = domain.Session
+type Claims = infrajwt.Claims
 
 type ResponseRenderer func(w http.ResponseWriter, r *http.Request, data interface{}) error
 
@@ -53,107 +52,15 @@ type AuthConfig struct {
 	defaultUsers map[string]*User `json:"-" yaml:"-"`
 }
 
-type Claims struct {
-	UserID    int              `json:"user_id"`
-	Username  string           `json:"username"`
-	Time      *jwt.NumericDate `json:"time"`
-	SessionID string           `json:"session_id"`
-	jwt.RegisteredClaims
-}
-
-var serverStartupTime = time.Now()
-
-func (c *Claims) Valid() error {
-	now := time.Now()
-
-	if c.Time == nil || c.Time.Time.Before(serverStartupTime) {
-		return errors.New("token issued before server startup")
-	}
-
-	if c.IssuedAt != nil && c.IssuedAt.Time.Before(serverStartupTime) {
-		return errors.New("token issued before server startup")
-	}
-
-	if c.ExpiresAt != nil && now.After(c.ExpiresAt.Time) {
-		return fmt.Errorf("token has expired: %s", c.ExpiresAt.Time.Format(time.DateTime))
-	}
-
-	if c.NotBefore != nil && now.Before(c.NotBefore.Time) {
-		return errors.New("token used before valid")
-	}
-
-	if c.UserID <= 0 {
-		return errors.New("invalid user ID")
-	}
-
-	if c.Username == "" {
-		return errors.New("username is required")
-	}
-
-	if c.SessionID == "" {
-		return errors.New("session ID is required")
-	}
-
-	return nil
-}
-
+// createAuthCookie builds an HTTP cookie using the configured cookie
+// policy from AuthConfig. The actual same-site / secure / domain logic
+// lives in infra/cookies.
 func createAuthCookie(name, value string, config *AuthConfig, r *http.Request, maxAge int) *http.Cookie {
-	isSecure := isSecureRequest(r)
-
-	if config.SecureCookie != nil {
-		isSecure = *config.SecureCookie
-	}
-
-	sameSite := getSameSitePolicy(config.CookieSameSite, isSecure)
-	if sameSite == http.SameSiteNoneMode {
-		isSecure = true
-	}
-
-	cookie := &http.Cookie{
-		Name:     name,
-		Value:    value,
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   isSecure,
-		SameSite: sameSite,
-		MaxAge:   maxAge,
-	}
-
-	if config.CookieDomain != "" {
-		cookie.Domain = config.CookieDomain
-	}
-
-	return cookie
-}
-
-func isSecureRequest(r *http.Request) bool {
-	if proto := r.Header.Get("X-Forwarded-Proto"); proto == "https" {
-		return true
-	}
-	if r.TLS != nil {
-		return true
-	}
-	if r.URL.Scheme == "https" {
-		return true
-	}
-	return false
-}
-
-func getSameSitePolicy(configValue string, isSecure bool) http.SameSite {
-	switch configValue {
-	case "None":
-		return http.SameSiteNoneMode
-	case "Lax", "": // Lax is the default and recommended for auth cookies
-		return http.SameSiteLaxMode
-	case "Strict":
-		return http.SameSiteStrictMode
-	default:
-		// Default to Lax for secure connections (better for redirects)
-		if isSecure {
-			return http.SameSiteLaxMode
-		}
-		return http.SameSiteDefaultMode
-	}
+	return cookies.Build(name, value, cookies.Policy{
+		Secure:      config.SecureCookie,
+		SameSiteRaw: config.CookieSameSite,
+		Domain:      config.CookieDomain,
+	}, r, maxAge)
 }
 
 type UserStore interface {
@@ -237,67 +144,12 @@ func IsBrowserRequest(r *http.Request) bool {
 
 const StorageDir = "./db_storage"
 
-type InMemorySessionStore struct {
-	data    map[string]*Session
-	counter int
-	lock    sync.RWMutex
-}
+// InMemorySessionStore lives in infra/sessions; this alias keeps the
+// legacy auth.InMemorySessionStore name available to existing callers.
+type InMemorySessionStore = sessions.InMemoryStore
 
-func (i *InMemorySessionStore) CreateSession(userID string, duration time.Duration) (*Session, error) {
-	i.lock.Lock()
-	defer i.lock.Unlock()
-
-	now := time.Now()
-	session := &Session{
-		ID:        fmt.Sprintf("session_%d_%d", i.counter, now.Unix()),
-		UserID:    userID,
-		CreatedAt: now,
-		ExpiresAt: now.Add(duration),
-		Revoked:   false,
-	}
-	i.counter++
-	i.data[session.ID] = session
-	return session, nil
-}
-
-func (i *InMemorySessionStore) GetSession(sessionID string) (*Session, error) {
-	i.lock.RLock()
-	defer i.lock.RUnlock()
-
-	session, exists := i.data[sessionID]
-	if !exists {
-		return nil, errors.New("session not found")
-	}
-
-	if session.Revoked {
-		return nil, errors.New("session revoked")
-	}
-
-	if time.Now().After(session.ExpiresAt) {
-		return nil, errors.New("session expired")
-	}
-
-	return session, nil
-}
-
-func (i *InMemorySessionStore) RevokeSession(sessionID string) error {
-	i.lock.Lock()
-	defer i.lock.Unlock()
-
-	session, exists := i.data[sessionID]
-	if !exists {
-		return errors.New("session not found")
-	}
-
-	session.Revoked = true
-	return nil
-}
-
-func NewInMemorySessionStore() *InMemorySessionStore {
-	return &InMemorySessionStore{
-		data: make(map[string]*Session),
-		lock: sync.RWMutex{},
-	}
+func NewInMemorySessionStore() *sessions.InMemoryStore {
+	return sessions.NewInMemoryStore()
 }
 
 // Global auth manager instance
