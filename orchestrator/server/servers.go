@@ -19,6 +19,7 @@ import (
 	"easyserver/infra/common"
 	"easyserver/usecases/routes"
 	"easyserver/orchestrator/features/storage"
+	orchusecases "easyserver/orchestrator/usecases"
 
 	"log"
 
@@ -302,6 +303,9 @@ func (s *Server) InitDependencies() error {
 			return err
 		}
 	}
+
+	// Bind usecases injected-function variables to their concrete feature impls.
+	orchusecases.WireAll()
 
 	return nil
 }
