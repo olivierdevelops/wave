@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Wave SPA + API demo</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 40rem; margin: 3rem auto; padding: 0 1rem; }
+    button { padding: 0.5rem 1rem; font-size: 1rem; }
+    pre { background: #f4f4f4; padding: 1rem; overflow: auto; }
+  </style>
+</head>
+<body>
+  <h1>Wave: SPA + API on one port</h1>
+  <p>This page is served by Wave's <code>static</code> route. The button
+  below calls <code>/api/get</code>, which Wave proxies to
+  <code>https://httpbin.org/get</code>.</p>
+  <p><button id="ping">Ping /api/get</button></p>
+  <pre id="out">(no response yet)</pre>
+  <script src="./app.js"></script>
+</body>
+</html>

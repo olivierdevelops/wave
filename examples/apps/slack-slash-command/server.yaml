@@ -1,0 +1,43 @@
+# slack-slash-command — Slack slash-command receiver.
+#
+# Slack POSTs form-encoded `command=/wave-status&user_name=...` and
+# signs the body with HMAC-SHA256 (header X-Slack-Signature, plus
+# X-Slack-Request-Timestamp). The webhook_sig provider: slack handles
+# the verification; the route returns Slack-formatted JSON.
+#
+# Run:
+#   SLACK_SIGNING_SECRET=xxxx wave serve \
+#     examples/apps/slack-slash-command/server.yaml --port 8606
+
+default:
+  host: 127.0.0.1
+  port: 8606
+
+env:
+  SLACK_SIGNING_SECRET:
+    description: "Slack app signing secret (Settings → Basic Information)."
+    default: ""
+
+routes:
+  - path: /slack/command
+    method: POST
+    type: content
+    webhook_sig:
+      provider: slack
+      secret: "${ENV:SLACK_SIGNING_SECRET}"
+      tolerance_sec: 300
+    content:
+      content_type: application/json
+      body: |
+        {
+          "response_type": "ephemeral",
+          "text": ":white_check_mark: Wave is healthy.",
+          "blocks": [
+            {"type": "section",
+             "text": {"type": "mrkdwn",
+                      "text": "*Wave status:* all systems nominal."}},
+            {"type": "context",
+             "elements": [{"type": "mrkdwn",
+                           "text": "Responding from `wave` orchestrator."}]}
+          ]
+        }

@@ -1,0 +1,58 @@
+# streaming-file-processor — long-running upload with progress over SSE.
+#
+# POST /process accepts a JSON payload describing rows to process and
+# emits one SSE event per row to the `progress` connection. Subscribers
+# at /events/progress see {processed, total, current_row} live.
+#
+# In a real deployment the heavy lifting moves into a plugin so the HTTP
+# request returns immediately and the worker streams updates; here we
+# show the wiring with a process route that produces the JSON envelope.
+#
+# Run:
+#   wave serve examples/apps/streaming-file-processor/server.yaml --port 8605
+# Subscribe (terminal A):
+#   curl -N http://127.0.0.1:8605/events/progress
+# Trigger (terminal B):
+#   curl -X POST http://127.0.0.1:8605/process \
+#        -H 'Content-Type: application/json' \
+#        -d '{"total":3,"processed":1,"current_row":"alice,42"}'
+
+default:
+  host: 127.0.0.1
+  port: 8605
+
+connections:
+  progress:
+    type: sse
+    subscribe_path: /events/progress
+    subscribe_cors_origins: ["*"]
+    keep_alive_interval: 15s
+    buffer_size: 64
+
+routes:
+  - path: /process
+    method: POST
+    type: stream-publish
+    inputs:
+      - { name: total, source: body, type: int, required: true, min: 1 }
+      - { name: processed, source: body, type: int, required: true, min: 0 }
+      - { name: current_row, source: body, type: string, required: true }
+    stream-publish:
+      connection: progress
+      route_id: file_progress
+      event_type: progress
+      static_meta:
+        source: file_processor
+
+  - path: /ui
+    method: GET
+    type: content
+    content:
+      content_type: text/html
+      body: |
+        <!doctype html><title>progress</title>
+        <pre id=o></pre>
+        <script>
+        const es = new EventSource('/events/progress');
+        es.onmessage = e => o.textContent += e.data + '\n';
+        </script>

@@ -1,0 +1,20 @@
+# cors-proxy — open-CORS reverse proxy.
+#
+# Browsers can't call cross-origin APIs that don't return
+# Access-Control-Allow-Origin. Drop this in front, point your frontend
+# at it, and the preflight + actual call both succeed.
+
+default:
+  host: localhost
+  port: 8303
+
+routes:
+  - path: /proxy/
+    methods: [GET, POST, PUT, DELETE, PATCH, OPTIONS]
+    type: forward
+    description: CORS-enabled proxy to httpbin
+    cors_origins: ["*"]
+    forward:
+      forward_url: https://httpbin.org
+      include_headers:
+        - ["X-Forwarded-By", "wave-cors-proxy"]

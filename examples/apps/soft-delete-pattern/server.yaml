@@ -1,0 +1,84 @@
+# soft-delete-pattern — items table with a deleted_at column. DELETE
+# sets the timestamp; GET filters where deleted_at IS NULL; an
+# admin trash route shows the soft-deleted rows.
+#
+#   wave serve examples/apps/soft-delete-pattern/server.yaml --port 8108
+
+default:
+  host: 127.0.0.1
+  port: 8108
+
+storage:
+  items:
+    type: sqlite
+    path: ./data.db
+    tables:
+      items:
+        columns:
+          - id INTEGER PRIMARY KEY AUTOINCREMENT
+          - name TEXT NOT NULL
+          - created_at TEXT NOT NULL DEFAULT (datetime('now'))
+          - deleted_at TEXT
+
+routes:
+  - path: /items
+    method: GET
+    type: storage-access
+    storage-access:
+      source: items
+      execute: |
+        SELECT id, name, created_at FROM items
+        WHERE deleted_at IS NULL
+        ORDER BY id DESC
+      response_content_type: application/json
+      output_template: "{{toJSON .Data}}"
+
+  - path: /items
+    method: POST
+    type: storage-access
+    inputs:
+      - { name: name, source: body, type: string, required: true, min: 1, max: 200 }
+    storage-access:
+      source: items
+      execute: "INSERT INTO items(name) VALUES ({{name}})"
+      response_content_type: application/json
+      output_template: '{"id": {{.LastInsertID}}}'
+
+  # Soft delete — UPDATE, not DELETE.
+  - path: /items/{id}
+    method: DELETE
+    type: storage-access
+    inputs:
+      - { name: id, source: path, type: int, required: true }
+    storage-access:
+      source: items
+      execute: |
+        UPDATE items SET deleted_at = datetime('now')
+        WHERE id = {{id}} AND deleted_at IS NULL
+      response_content_type: application/json
+      output_template: '{"soft_deleted": {{.RowsAffected}}}'
+
+  # Admin view of the trash bin.
+  - path: /items/trash
+    method: GET
+    type: storage-access
+    storage-access:
+      source: items
+      execute: |
+        SELECT id, name, created_at, deleted_at FROM items
+        WHERE deleted_at IS NOT NULL
+        ORDER BY deleted_at DESC
+      response_content_type: application/json
+      output_template: "{{toJSON .Data}}"
+
+  # Restore a soft-deleted row.
+  - path: /items/{id}/restore
+    method: POST
+    type: storage-access
+    inputs:
+      - { name: id, source: path, type: int, required: true }
+    storage-access:
+      source: items
+      execute: "UPDATE items SET deleted_at = NULL WHERE id = {{id}}"
+      response_content_type: application/json
+      output_template: '{"restored": {{.RowsAffected}}}'

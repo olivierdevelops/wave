@@ -1,0 +1,68 @@
+# outbox-reliability-demo — bank-transfer-shaped flow.
+#
+# POST /transfer writes a transfer row AND publishes a `transfer_made`
+# event whose forward_url goes through the durable outbox. The outbox
+# worker drains in the background, retrying on failure — so even if the
+# downstream is down (or this process restarts), the side-effect won't
+# be lost.
+#
+# Run:
+#   wave serve examples/apps/outbox-reliability-demo/server.yaml --port 8610
+# Trigger:
+#   curl -X POST http://127.0.0.1:8610/transfer \
+#        -H 'Content-Type: application/json' \
+#        -d '{"from_account":"A","to_account":"B","amount_cents":4200}'
+
+default:
+  host: 127.0.0.1
+  port: 8610
+
+env:
+  DOWNSTREAM_URL:
+    description: "Where outbox-bound events go (use httpbin.org/post in dev)."
+    default: "https://httpbin.org/post"
+
+outbox_db: ./outbox.db
+
+storage:
+  ledger:
+    type: sqlite
+    path: ./data.db
+    tables:
+      transfers:
+        columns:
+          - id INTEGER PRIMARY KEY AUTOINCREMENT
+          - from_account TEXT NOT NULL
+          - to_account TEXT NOT NULL
+          - amount_cents INTEGER NOT NULL
+          - created_at TEXT NOT NULL DEFAULT (datetime('now'))
+
+connections:
+  transfers:
+    type: sse
+    subscribe_path: /events/transfers
+
+routes:
+  - path: /transfer
+    method: POST
+    type: stream-publish
+    inputs:
+      - { name: from_account, source: body, type: string, required: true, min: 1, max: 64 }
+      - { name: to_account, source: body, type: string, required: true, min: 1, max: 64 }
+      - { name: amount_cents, source: body, type: int, required: true, min: 1 }
+    stream-publish:
+      connection: transfers
+      route_id: transfer_made
+      event_type: transfer
+      static_meta: { source: ledger }
+      forward_url: "${ENV:DOWNSTREAM_URL}"
+
+  # Read-side: list transfers the orchestrator already persisted.
+  - path: /transfers
+    method: GET
+    type: storage-access
+    storage-access:
+      source: ledger
+      execute: "SELECT id, from_account, to_account, amount_cents, created_at FROM transfers ORDER BY id DESC LIMIT 100"
+      response_content_type: application/json
+      output_template: "{{toJSON .Data}}"

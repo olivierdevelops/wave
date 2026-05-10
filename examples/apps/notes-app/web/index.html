@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Notes</title>
+  <style>
+    body { font: 16px/1.4 system-ui, sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; }
+    form { display: grid; gap: .5rem; margin-bottom: 1.5rem; }
+    input, textarea, button { font: inherit; padding: .4rem .6rem; }
+    li { border-bottom: 1px solid #ddd; padding: .6rem 0; }
+    .meta { color: #888; font-size: .85em; }
+    button.del { background: none; border: 1px solid #c44; color: #c44; padding: .1rem .4rem; border-radius: 4px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h1>Notes</h1>
+
+  <form id="f">
+    <input id="title" placeholder="Title" required />
+    <textarea id="body" placeholder="Body" rows="3"></textarea>
+    <button type="submit">Add note</button>
+  </form>
+
+  <ul id="list"></ul>
+
+  <script>
+    const list = document.getElementById('list');
+
+    async function refresh() {
+      const r = await fetch('/notes');
+      const rows = await r.json();
+      list.innerHTML = '';
+      for (const n of rows || []) {
+        const li = document.createElement('li');
+        li.innerHTML =
+          '<strong></strong><div></div>' +
+          '<div class="meta"></div> ' +
+          '<button class="del">delete</button>';
+        li.querySelector('strong').textContent = n.title;
+        li.querySelector('div:nth-of-type(1)').textContent = n.body || '';
+        li.querySelector('.meta').textContent = '#' + n.id + ' · ' + n.created_at;
+        li.querySelector('button.del').onclick = async () => {
+          await fetch('/notes/' + n.id, { method: 'DELETE' });
+          refresh();
+        };
+        list.appendChild(li);
+      }
+    }
+
+    document.getElementById('f').onsubmit = async (e) => {
+      e.preventDefault();
+      const title = document.getElementById('title').value.trim();
+      const body  = document.getElementById('body').value;
+      if (!title) return;
+      await fetch('/notes', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ title, body }),
+      });
+      e.target.reset();
+      refresh();
+    };
+
+    refresh();
+  </script>
+</body>
+</html>

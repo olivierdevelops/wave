@@ -1,0 +1,60 @@
+# api-gateway-rate-limited — named limits, composed per route.
+#
+# The top-level `limits:` registry defines reusable failure handlers.
+# Each route lists the entries it wants by NAME — so the same
+# `rate_100rps` policy can be reused across many endpoints, and updated
+# in one place.
+
+default:
+  host: localhost
+  port: 8302
+
+# Reusable named limit entries. Each one binds exactly one CASE.
+limits:
+  rate_100rps:
+    case: rate_limited
+    rps: 100
+    burst: 200
+
+  rate_5rps:
+    case: rate_limited
+    rps: 5
+    burst: 10
+
+  body_5mb:
+    case: body_too_large
+    max_size: 5MB
+
+  circuit_5fail:
+    case: circuit_open
+    failure_threshold: 5
+    cooldown: 30s
+
+routes:
+  # Public read endpoint — generous rate limit.
+  - path: /api/users
+    method: GET
+    type: forward
+    description: Public users list — 100rps, 5MB cap, breaker
+    limits: [rate_100rps, body_5mb, circuit_5fail]
+    forward:
+      forward_url: https://httpbin.org/anything/users
+
+  # Order writes — same generous rate, also size-capped + circuit.
+  - path: /api/orders
+    method: POST
+    type: forward
+    description: Order POSTs — 100rps + 5MB body cap + breaker
+    limits: [rate_100rps, body_5mb, circuit_5fail]
+    forward:
+      forward_url: https://httpbin.org/anything/orders
+
+  # Admin endpoint — much tighter rate limit (overrides rate_100rps via
+  # last-wins on the same case).
+  - path: /api/admin
+    method: GET
+    type: forward
+    description: Admin route — only 5rps, still 5MB + breaker
+    limits: [rate_100rps, rate_5rps, body_5mb, circuit_5fail]
+    forward:
+      forward_url: https://httpbin.org/anything/admin

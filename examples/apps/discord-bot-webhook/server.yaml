@@ -1,0 +1,44 @@
+# discord-bot-webhook — outbound notifications via the durable outbox.
+#
+# POST /events/notify accepts an event body, fans it out to anyone
+# listening on /events/notify (SSE), AND queues a delivery to a Discord
+# webhook URL. The outbox worker retries on failure and dead-letters
+# after the retry budget is exhausted, so transient Discord outages
+# don't lose events.
+#
+# Run:
+#   DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/123/abc \
+#   wave serve examples/apps/discord-bot-webhook/server.yaml --port 8607
+
+default:
+  host: 127.0.0.1
+  port: 8607
+
+env:
+  DISCORD_WEBHOOK_URL:
+    description: "Full Discord webhook URL (Server Settings → Integrations)."
+    default: "https://httpbin.org/post"
+
+# Durable outbox — survives restarts, drains on a worker.
+outbox_db: ./outbox.db
+
+connections:
+  notify:
+    type: sse
+    subscribe_path: /events/notify
+
+routes:
+  - path: /notify
+    method: POST
+    type: stream-publish
+    inputs:
+      - { name: title, source: body, type: string, required: true, max: 200 }
+      - { name: body, source: body, type: string, required: true, max: 2000 }
+    stream-publish:
+      connection: notify
+      route_id: discord_notify
+      event_type: notification
+      static_meta:
+        sink: discord
+      # forward_url goes through the outbox: failed POSTs are retried.
+      forward_url: "${ENV:DISCORD_WEBHOOK_URL}"

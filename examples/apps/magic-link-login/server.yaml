@@ -1,0 +1,77 @@
+# Passwordless email magic-link sign-in.
+#
+# A POST to /auth/login/request issues a single-use token and
+# "sends" it to the user's email. With the default `console`
+# mailer (no auth_flows.smtp config), the link is logged to
+# stderr — copy it from the server output and open it.
+#
+# A GET on /auth/login/consume?token=... validates the token
+# and creates a session.
+
+default:
+  host: localhost
+  port: 8001
+
+# auth_flows is omitted entirely — the orchestrator falls back to
+# the console mailer in dev mode and prints every email to stderr.
+# To plug in real SMTP, add an auth_flows.smtp block.
+
+auth:
+  session:
+    type: jwt
+    token_location: cookie
+    cookie_name: wave_session
+    secret: dev-secret-change-me
+    token_duration_seconds: 86400
+
+routes:
+  - path: /login
+    method: GET
+    type: content
+    content:
+      content_type: text/html
+      body: |
+        <!doctype html>
+        <title>magic-link demo</title>
+        <h1>Magic link sign-in</h1>
+        <form id=f onsubmit="event.preventDefault();
+          fetch('/auth/login/request',{method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({email:f.email.value})})
+          .then(r=>r.json()).then(j=>document.getElementById('o').textContent=
+          'sent='+j.sent+' — check the server stderr for the link.')">
+          <input name=email type=email placeholder="you@example.com" required>
+          <button>send link</button>
+        </form>
+        <pre id=o></pre>
+
+  - path: /auth/login/request
+    method: POST
+    type: magic-link-request
+    magic-link-request:
+      callback_url: http://localhost:8001/auth/login/consume
+      from_email: noreply@example.com
+      subject: "Your sign-in link"
+      ttl_seconds: 600
+      email_body: |
+        Hi,
+
+        Click to sign in: {{.Link}}
+
+        The link expires in {{.MinutesValid}} minutes.
+
+  - path: /auth/login/consume
+    method: GET
+    type: magic-link-consume
+    magic-link-consume:
+      success_redirect: /me
+
+  - path: /me
+    method: GET
+    type: content
+    auth: ["session"]
+    content:
+      content_type: text/html
+      body: |
+        <h1>You're signed in.</h1>
+        <p>The session cookie was set by the magic-link consume route.</p>

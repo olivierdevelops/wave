@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>pomodoro</title>
+  <style>
+    body { font: 16px/1.4 system-ui, sans-serif; max-width: 480px; margin: 2rem auto; padding: 0 1rem; text-align: center; color: #222; }
+    h1 { margin-bottom: .2rem; }
+    .meta { color: #888; font-size: .9em; margin-bottom: 2rem; }
+    .clock { font: 700 5rem/1 ui-monospace, Menlo, monospace; margin: 1.5rem 0; }
+    .state { color: #888; text-transform: uppercase; letter-spacing: 2px; font-size: .85em; }
+    button { font: inherit; padding: .55rem 1.4rem; margin: .25rem; border-radius: 4px; border: 1px solid #444; background: #f8f8f8; cursor: pointer; }
+    button.primary { background: #e74c3c; color: #fff; border: 0; }
+  </style>
+</head>
+<body>
+  <h1>pomodoro</h1>
+  <div class="meta" id="meta">loading…</div>
+  <div class="clock" id="clock">25:00</div>
+  <div class="state" id="state">idle</div>
+  <div>
+    <button class="primary" id="bStart">start</button>
+    <button id="bPause">pause</button>
+    <button id="bReset">reset</button>
+  </div>
+
+  <script>
+    const params = new URLSearchParams(location.search);
+    const room = params.get('room') || 'default';
+    document.getElementById('meta').textContent = 'room: ' + room;
+
+    let state = { state: 'idle', remaining: 1500, started_at: 0 };
+
+    function fmt(s) {
+      const m = Math.max(0, s);
+      const mm = String(Math.floor(m / 60)).padStart(2, '0');
+      const ss = String(m % 60).padStart(2, '0');
+      return mm + ':' + ss;
+    }
+
+    function liveSeconds() {
+      if (state.state === 'running') {
+        const now = Math.floor(Date.now() / 1000);
+        return Math.max(0, state.remaining - (now - state.started_at));
+      }
+      return state.remaining;
+    }
+
+    function render() {
+      document.getElementById('clock').textContent = fmt(liveSeconds());
+      document.getElementById('state').textContent = state.state;
+    }
+
+    async function refresh() {
+      const r = await fetch('/rooms/' + encodeURIComponent(room));
+      const j = await r.json();
+      const row = Array.isArray(j) ? j[0] : j;
+      if (row) {
+        state = {
+          state: row.state,
+          remaining: Number(row.remaining),
+          started_at: Number(row.started_at) || 0,
+        };
+        render();
+      }
+    }
+
+    async function action(verb) {
+      await fetch('/rooms/' + encodeURIComponent(room) + '/' + verb, { method: 'POST' });
+      await fetch('/rooms/notify', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ room }),
+      });
+      refresh();
+    }
+
+    document.getElementById('bStart').onclick = () => action('start');
+    document.getElementById('bPause').onclick = () => action('pause');
+    document.getElementById('bReset').onclick = () => action('reset');
+
+    refresh();
+    setInterval(render, 250);
+    const sse = new EventSource('/events/rooms');
+    sse.addEventListener('change', (ev) => {
+      try {
+        const data = JSON.parse(ev.data);
+        if (data.room === room) refresh();
+      } catch {}
+    });
+  </script>
+</body>
+</html>

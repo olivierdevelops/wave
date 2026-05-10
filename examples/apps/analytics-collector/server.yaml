@@ -1,0 +1,109 @@
+# analytics-collector — privacy-respecting page-view collector.
+#
+#   wave serve examples/apps/analytics-collector/server.yaml --port 8508
+#
+# Sites POST /collect with {site_id, path, referrer, ua_hash}.
+# No PII (no IP, no full UA, no user id).
+#
+# Admin views top pages + per-day traffic at /dashboard
+# (no auth in this demo — gate it for production).
+
+default:
+  host: 127.0.0.1
+  port: 8508
+
+storage:
+  ana:
+    type: sqlite
+    path: ./data.db
+    tables:
+      events:
+        columns:
+          - id INTEGER PRIMARY KEY AUTOINCREMENT
+          - site_id TEXT NOT NULL
+          - path TEXT NOT NULL
+          - referrer TEXT NOT NULL DEFAULT ''
+          - ua_hash TEXT NOT NULL DEFAULT ''
+          - day TEXT NOT NULL DEFAULT (date('now'))
+          - at TEXT NOT NULL DEFAULT (datetime('now'))
+
+routes:
+  # Public collection endpoint. Declared inputs enforce the schema
+  # so callers can't smuggle extra fields.
+  - path: /collect
+    method: POST
+    type: storage-access
+    inputs:
+      - { name: site_id,  source: body, type: string, required: true,  min: 1, max: 64 }
+      - { name: path,     source: body, type: string, required: true,  min: 1, max: 500 }
+      - { name: referrer, source: body, type: string, default: "", max: 500 }
+      - { name: ua_hash,  source: body, type: string, default: "", max: 64 }
+    storage-access:
+      source: ana
+      execute: |
+        INSERT INTO events(site_id, path, referrer, ua_hash)
+        VALUES ({{site_id}}, {{path}}, {{referrer}}, {{ua_hash}})
+      response_content_type: application/json
+      output_template: '{"ok":true}'
+
+  # Tiny demo collector page (uncomment data below to inject site events).
+  - path: /demo
+    method: GET
+    type: file
+    file: { filepath: ./web/demo.html }
+
+  # Admin dashboard — server-side rendered HTML.
+  - path: /dashboard
+    method: GET
+    type: storage-access
+    storage-access:
+      source: ana
+      execute: |
+        SELECT
+          (SELECT count(*) FROM events) AS total,
+          (SELECT count(DISTINCT site_id) FROM events) AS sites,
+          (SELECT count(DISTINCT ua_hash) FROM events WHERE ua_hash != '') AS uniques,
+          (SELECT json_group_array(json_object('path', path, 'n', n))
+             FROM (SELECT path, count(*) n FROM events
+                   GROUP BY path ORDER BY n DESC LIMIT 10)) AS top_paths,
+          (SELECT json_group_array(json_object('day', day, 'n', n))
+             FROM (SELECT day, count(*) n FROM events
+                   GROUP BY day ORDER BY day DESC LIMIT 14)) AS days
+      response_content_type: text/html
+      output_template: |
+        <!doctype html><html><head><meta charset="utf-8">
+        <title>analytics dashboard</title>
+        <style>body{font:15px/1.4 system-ui;max-width:780px;margin:1.5rem auto;padding:0 1rem;color:#222}
+        .stats{display:flex;gap:1.5rem;margin:1rem 0}
+        .stat{background:#f6f6f6;padding:.7rem 1rem;border-radius:6px;min-width:80px}
+        .stat .n{font:700 1.6rem/1 system-ui;color:#1976d2}
+        .stat .l{color:#888;font-size:.85em;margin-top:.2rem}
+        table{border-collapse:collapse;width:100%;margin-top:.5rem}
+        td,th{text-align:left;padding:.35rem .6rem;border-bottom:1px solid #eee}
+        .bar{display:inline-block;height:14px;background:#1976d2;vertical-align:middle;margin-right:.4rem;border-radius:2px}
+        h3{margin-top:1.5rem}</style>
+        </head><body>
+        <h1>analytics</h1>
+        <div class="stats">
+          <div class="stat"><div class="n">{{.Data.total}}</div><div class="l">total views</div></div>
+          <div class="stat"><div class="n">{{.Data.sites}}</div><div class="l">sites</div></div>
+          <div class="stat"><div class="n">{{.Data.uniques}}</div><div class="l">unique UAs</div></div>
+        </div>
+        <h3>top paths</h3>
+        <table id="tp"></table>
+        <h3>traffic — last 14 days</h3>
+        <table id="tt"></table>
+        <script>
+        const data = {{toJSON .Data}};
+        const top = JSON.parse(data.top_paths || '[]');
+        const days = JSON.parse(data.days || '[]');
+        const maxTop = Math.max(1, ...top.map(r => r.n));
+        const maxDay = Math.max(1, ...days.map(r => r.n));
+        document.getElementById('tp').innerHTML = top.map(r =>
+          '<tr><td><code>' + r.path + '</code></td>' +
+          '<td><span class="bar" style="width:' + (180 * r.n / maxTop) + 'px"></span>' + r.n + '</td></tr>').join('');
+        document.getElementById('tt').innerHTML = days.map(r =>
+          '<tr><td>' + r.day + '</td>' +
+          '<td><span class="bar" style="width:' + (180 * r.n / maxDay) + 'px"></span>' + r.n + '</td></tr>').join('');
+        </script>
+        </body></html>

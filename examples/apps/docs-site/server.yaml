@@ -1,0 +1,36 @@
+# docs-site — Mintlify-lite documentation site.
+#
+# A sidebar-driven docs UI. The sidebar is built client-side from
+# `nav.json` (served as a static file). Each docs page is a markdown
+# file under ./docs/, rendered to HTML by Wave's `file-server` route
+# in `prettify: true` mode (markdown + Prism syntax highlighting).
+#
+#   wave serve examples/apps/docs-site/server.yaml --port 8402
+# Then open http://127.0.0.1:8402/
+
+default:
+  host: 127.0.0.1
+  port: 8402
+
+routes:
+  # Landing page = the docs shell. The sidebar fetches /nav.json
+  # and the main pane iframes the current /docs/<page>.md route.
+  - path: /
+    type: file
+    file:
+      filepath: ./web/index.html
+
+  # Markdown pages, rendered with Prism highlighting.
+  - path: /docs/
+    method: GET
+    type: file-server
+    file-server:
+      dir: ./docs
+      prettify: true
+
+  # Sidebar definition + stylesheet.
+  - path: /assets/
+    method: GET
+    type: static
+    static:
+      dir: ./assets

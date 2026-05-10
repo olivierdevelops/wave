@@ -1,0 +1,121 @@
+# polls — create + vote on polls; live counts via SSE.
+#
+#   wave serve examples/apps/polls/server.yaml --port 8503
+#
+# POST /polls         {title, options}    → {id}
+# GET  /polls/{id}    →  poll JSON with current counts
+# POST /polls/{id}/vote  {option}         → publishes a tick on SSE
+#
+# The /vote handler bumps a counter in SQLite *and* fans out an SSE
+# event over the `polls` connection. Frontend subscribes at
+# /events/polls and updates the bar chart in place.
+
+default:
+  host: 127.0.0.1
+  port: 8503
+
+storage:
+  poll:
+    type: sqlite
+    path: ./data.db
+    tables:
+      polls:
+        columns:
+          - id INTEGER PRIMARY KEY AUTOINCREMENT
+          - title TEXT NOT NULL
+          - created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      options:
+        columns:
+          - id INTEGER PRIMARY KEY AUTOINCREMENT
+          - poll_id INTEGER NOT NULL
+          - label TEXT NOT NULL
+          - votes INTEGER NOT NULL DEFAULT 0
+
+connections:
+  polls:
+    type: sse
+    subscribe_path: /events/polls
+    keep_alive_interval: 15s
+    buffer_size: 64
+    subscribe_cors_origins: ["*"]
+
+routes:
+  - path: /app
+    method: GET
+    type: file
+    file: { filepath: ./web/index.html }
+
+  # Create a poll (title only). Returns {"id": N}. Post each option
+  # separately to /polls/{id}/options — keeps each route's SQL
+  # single-statement and the LastInsertID accurate.
+  - path: /polls
+    method: POST
+    type: storage-access
+    inputs:
+      - { name: title, source: body, type: string, required: true, min: 1, max: 200 }
+    storage-access:
+      source: poll
+      execute: "INSERT INTO polls(title) VALUES ({{title}})"
+      response_content_type: application/json
+      output_template: '{"id": {{.LastInsertID}}}'
+
+  - path: /polls/{poll_id}/options
+    method: POST
+    type: storage-access
+    inputs:
+      - { name: poll_id, source: path, type: int,    required: true }
+      - { name: label,   source: body, type: string, required: true, min: 1, max: 200 }
+    storage-access:
+      source: poll
+      execute: |
+        INSERT INTO options(poll_id, label) VALUES ({{poll_id}}, {{label}})
+      response_content_type: application/json
+      output_template: '{"id": {{.LastInsertID}}}'
+
+  # Read poll + tallied options.
+  - path: /polls/{id}
+    method: GET
+    type: storage-access
+    inputs:
+      - { name: id, source: path, type: int, required: true }
+    storage-access:
+      source: poll
+      execute: |
+        SELECT
+          p.id, p.title,
+          (SELECT json_group_array(
+              json_object('id', o.id, 'label', o.label, 'votes', o.votes))
+           FROM options o WHERE o.poll_id = p.id) AS options_json
+        FROM polls p WHERE p.id = {{id}} LIMIT 1
+      response_content_type: application/json
+      output_template: '{{toJSON .Data}}'
+
+  # Cast a vote. Bumps the counter; downstream stream-publish fans
+  # the event out to all SSE subscribers.
+  - path: /polls/{poll_id}/vote
+    method: POST
+    type: storage-access
+    inputs:
+      - { name: poll_id,   source: path, type: int, required: true }
+      - { name: option_id, source: body, type: int, required: true }
+    storage-access:
+      source: poll
+      execute: |
+        UPDATE options
+        SET votes = votes + 1
+        WHERE id = {{option_id}} AND poll_id = {{poll_id}}
+      response_content_type: application/json
+      output_template: '{"updated": {{.RowsAffected}}}'
+
+  # Fan-out endpoint — clients POST here from /vote success to push
+  # a refresh signal. Kept separate so the SQL UPDATE is independent
+  # of the broker; either failing doesn't break the other.
+  - path: /polls/{poll_id}/notify
+    method: POST
+    type: stream-publish
+    stream-publish:
+      connection: polls
+      route_id: poll_updates
+      event_type: vote
+      output:
+        poll_id: response.poll_id

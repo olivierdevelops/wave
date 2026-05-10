@@ -1,0 +1,52 @@
+# cron-data-refresh — scheduler hits an upstream API every 5 minutes.
+#
+# A `schedule:` entry runs the `upstream` HTTP plugin on a fixed
+# interval. The plugin response could be persisted by an exporter
+# plugin in production; here we provide /cached as a forward read of
+# the same upstream so callers see the most recent payload on demand.
+#
+# Run:
+#   wave serve examples/apps/cron-data-refresh/server.yaml --port 8609
+
+default:
+  host: 127.0.0.1
+  port: 8609
+
+storage:
+  cache:
+    type: sqlite
+    path: ./data.db
+    tables:
+      cached_payload:
+        columns:
+          - id INTEGER PRIMARY KEY CHECK (id = 1)
+          - body TEXT NOT NULL
+          - refreshed_at TEXT NOT NULL DEFAULT (datetime('now'))
+
+plugins:
+  upstream:
+    transport: http
+    address: "https://httpbin.org/uuid"
+    timeout: 5s
+
+schedule:
+  - name: refresh_upstream
+    plugin: upstream
+    trigger_key: refresh
+    every: "5m"
+    body: { source: "cron" }
+
+routes:
+  - path: /cached
+    method: GET
+    type: forward
+    forward:
+      forward_url: "https://httpbin.org/uuid"
+      timeout: "5s"
+
+  - path: /refresh
+    method: POST
+    type: plugin
+    plugin:
+      name: upstream
+      trigger_key: refresh

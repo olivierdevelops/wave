@@ -1,0 +1,62 @@
+# postgres-plugin-crud — Items CRUD where the storage backend is the
+# `postgres-storage` reference plugin instead of the built-in SQLite.
+#
+#   wave serve examples/apps/postgres-plugin-crud/server.yaml --port 8701
+#
+# Requires:
+#   - /tmp/wave-postgres binary (see README to build)
+#   - PG_DSN env var pointing at a Postgres instance with an `items` table:
+#       CREATE TABLE items (
+#         id    SERIAL PRIMARY KEY,
+#         name  TEXT NOT NULL,
+#         price NUMERIC NOT NULL DEFAULT 0
+#       );
+
+default:
+  host: 127.0.0.1
+  port: 8701
+
+plugins:
+  pg_main:
+    kind: storage
+    transport: process
+    command: /tmp/wave-postgres
+    env:
+      PG_DSN: "${ENV:PG_DSN}"
+      PG_MAX_CONNS: "10"
+
+routes:
+  # List items — newest first.
+  - path: /items
+    method: GET
+    type: storage-access
+    storage-access:
+      source: pg_main
+      execute: "SELECT id, name, price FROM items ORDER BY id DESC"
+      response_content_type: application/json
+      output_template: "{{toJSON .Data}}"
+
+  # Create. JSON body: { "name": "...", "price": 1.99 }
+  - path: /items
+    method: POST
+    type: storage-access
+    inputs:
+      - { name: name,  source: body, type: string, required: true, min: 1, max: 200 }
+      - { name: price, source: body, type: float,  default: 0 }
+    storage-access:
+      source: pg_main
+      execute: "INSERT INTO items(name, price) VALUES ('{{.name}}', {{.price}}) RETURNING id"
+      response_content_type: application/json
+      output_template: "{{toJSON .Data}}"
+
+  # Delete by id.
+  - path: /items/{id}
+    method: DELETE
+    type: storage-access
+    inputs:
+      - { name: id, source: path, type: int, required: true }
+    storage-access:
+      source: pg_main
+      execute: "DELETE FROM items WHERE id = {{.id}}"
+      response_content_type: application/json
+      output_template: '{"deleted": {{.RowsAffected}}}'

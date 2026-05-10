@@ -1,0 +1,32 @@
+# Live multi-cursor demo. POST /cursor with {x, y, user} is published
+# to the `cursors` SSE broker; the page draws every other user's cursor
+# on a canvas in real time.
+#
+# Run:
+#   wave serve examples/apps/live-cursors/server.yaml --port 8207
+
+default:
+  host: 127.0.0.1
+  port: 8207
+
+connections:
+  cursors:
+    type: sse
+    subscribe_path: /events/cursors
+    subscribe_cors_origins: ["*"]
+    keep_alive_interval: 10s
+    buffer_size: 256
+
+routes:
+  - path: /
+    method: GET
+    type: file
+    file: { filepath: ./web/index.html }
+
+  - path: /cursor
+    method: POST
+    type: stream-publish
+    stream-publish:
+      connection: cursors
+      route_id: cursor_move
+      event_type: cursor

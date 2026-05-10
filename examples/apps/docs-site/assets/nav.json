@@ -1,0 +1,17 @@
+{
+  "sections": [
+    {
+      "title": "Get started",
+      "pages": [
+        { "label": "Getting started", "file": "getting-started.md" },
+        { "label": "Concepts",        "file": "concepts.md" }
+      ]
+    },
+    {
+      "title": "Reference",
+      "pages": [
+        { "label": "API reference", "file": "api-reference.md" }
+      ]
+    }
+  ]
+}

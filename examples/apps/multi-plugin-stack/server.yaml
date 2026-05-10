@@ -1,0 +1,119 @@
+# multi-plugin-stack — flagship demo. A small issue tracker that wires
+# ALL FOUR reference plugins at once:
+#
+#   storage  → postgres-storage   (issues table lives in Postgres)
+#   auth     → saml-auth          (corporate SSO at /login/saml)
+#   secrets  → vault-secrets      (JWT signing key, Postgres DSN)
+#   exporter → otel-exporter      (metrics + traces to OTLP)
+#
+#   wave serve examples/apps/multi-plugin-stack/server.yaml --port 8705
+
+default:
+  host: 127.0.0.1
+  port: 8705
+
+plugins:
+  vault:
+    kind: secrets
+    transport: process
+    command: /tmp/wave-vault
+    env:
+      VAULT_ADDR:  "${ENV:VAULT_ADDR}"
+      VAULT_TOKEN: "${ENV:VAULT_TOKEN}"
+
+  pg:
+    kind: storage
+    transport: process
+    command: /tmp/wave-postgres
+    env:
+      # DSN is itself fed from Vault — secrets-kind plugin runs first.
+      PG_DSN: "${PLUGIN:vault:secret/data/wave#pg_dsn}"
+      PG_MAX_CONNS: "10"
+
+  saml_corp:
+    kind: auth
+    transport: process
+    command: /tmp/wave-saml
+    env:
+      SAML_IDP_METADATA_URL: "${ENV:SAML_IDP_METADATA_URL}"
+      SAML_SP_ENTITY_ID:     "http://127.0.0.1:8705/saml"
+      SAML_SP_ACS_URL:       "http://127.0.0.1:8705/login/saml/callback"
+      SAML_SP_CERT_PATH:     "${ENV:SAML_SP_CERT_PATH}"
+      SAML_SP_KEY_PATH:      "${ENV:SAML_SP_KEY_PATH}"
+
+  otel:
+    kind: exporter
+    transport: process
+    command: /tmp/wave-otel
+    env:
+      OTEL_EXPORTER_OTLP_ENDPOINT: "${ENV:OTEL_EXPORTER_OTLP_ENDPOINT}"
+      OTEL_SERVICE_NAME: wave-issue-tracker
+
+observability:
+  exporters: [otel]
+
+auth:
+  corp_sso:
+    type: plugin
+    plugin: saml_corp
+    token_location: cookie
+    cookie_name: corp_session
+    redirect_on_success: /issues
+    redirect_on_failure: /login
+
+routes:
+  - path: /login
+    method: GET
+    type: content
+    content:
+      content_type: text/html
+      body: '<a href="/login/saml">Sign in with corporate SSO</a>'
+
+  - path: /login/saml
+    method: GET
+    type: auth-login
+    headers: { X-Auth-Method: saml_init }
+    auth-login: { for: corp_sso, redirect_on_success: /issues, redirect_on_failure: /login }
+
+  - path: /login/saml/callback
+    method: POST
+    type: auth-login
+    headers: { X-Auth-Method: saml_callback }
+    auth-login: { for: corp_sso, redirect_on_success: /issues, redirect_on_failure: /login }
+
+  # ---- protected issue tracker ----------------------------------------
+
+  - path: /issues
+    method: GET
+    type: storage-access
+    auth: ["corp_sso"]
+    storage-access:
+      source: pg
+      execute: "SELECT id, title, status FROM issues ORDER BY id DESC"
+      response_content_type: application/json
+      output_template: "{{toJSON .Data}}"
+
+  - path: /issues
+    method: POST
+    type: storage-access
+    auth: ["corp_sso"]
+    inputs:
+      - { name: title,  source: body, type: string, required: true, min: 1, max: 200 }
+      - { name: status, source: body, type: string, default: "open" }
+    storage-access:
+      source: pg
+      execute: "INSERT INTO issues(title, status) VALUES ('{{.title}}', '{{.status}}') RETURNING id"
+      response_content_type: application/json
+      output_template: "{{toJSON .Data}}"
+
+  - path: /issues/{id}/close
+    method: POST
+    type: storage-access
+    auth: ["corp_sso"]
+    inputs:
+      - { name: id, source: path, type: int, required: true }
+    storage-access:
+      source: pg
+      execute: "UPDATE issues SET status='closed' WHERE id={{.id}}"
+      response_content_type: application/json
+      output_template: '{"closed": {{.RowsAffected}}}'

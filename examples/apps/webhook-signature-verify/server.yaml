@@ -1,0 +1,62 @@
+# Generic HMAC verification. Three routes show the same verifier with
+# different algorithms / headers / prefixes.
+#
+# Run:
+#   WAVE_HMAC_SECRET=topsecret wave serve \
+#     examples/apps/webhook-signature-verify/server.yaml --port 8205
+
+default:
+  host: 127.0.0.1
+  port: 8205
+
+env:
+  WAVE_HMAC_SECRET: { description: "Shared HMAC secret", default: "topsecret" }
+
+connections:
+  hmac_in:
+    type: sse
+    subscribe_path: /events/hmac
+
+routes:
+  # Plain SHA256, hex-only header value.
+  - path: /v1/sha256
+    method: POST
+    type: stream-publish
+    webhook_sig:
+      provider: generic
+      secret: "${ENV:WAVE_HMAC_SECRET}"
+      header: X-Signature
+      algorithm: sha256
+    stream-publish:
+      connection: hmac_in
+      route_id: sha256
+      event_type: sha256
+
+  # SHA1 (legacy receivers).
+  - path: /v1/sha1
+    method: POST
+    type: stream-publish
+    webhook_sig:
+      provider: generic
+      secret: "${ENV:WAVE_HMAC_SECRET}"
+      header: X-Signature
+      algorithm: sha1
+    stream-publish:
+      connection: hmac_in
+      route_id: sha1
+      event_type: sha1
+
+  # SHA256 with the GitHub-style "sha256=" prefix on the value.
+  - path: /v1/sha256-prefixed
+    method: POST
+    type: stream-publish
+    webhook_sig:
+      provider: generic
+      secret: "${ENV:WAVE_HMAC_SECRET}"
+      header: X-Signature
+      algorithm: sha256
+      header_prefix: "sha256="
+    stream-publish:
+      connection: hmac_in
+      route_id: sha256_prefixed
+      event_type: sha256_prefixed

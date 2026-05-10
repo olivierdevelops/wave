@@ -1,0 +1,72 @@
+# audit-logged-admin — admin surface guarded by RBAC; every hit lands
+# in Wave's audit log (`infra/audit`).
+#
+# `/admin/` (built-in dashboard) and the routes below all emit audit
+# events. With the default WriterSink, events go to stderr — wire a
+# FileSink in your binary's main to persist them.
+#
+# Run:
+#   wave serve examples/apps/audit-logged-admin/server.yaml --port 8603
+
+default:
+  host: 127.0.0.1
+  port: 8603
+
+auth:
+  session:
+    type: jwt
+    token_location: cookie
+    cookie_name: wave_session
+    secret: dev-secret-change-me
+    token_duration_seconds: 86400
+
+storage:
+  app:
+    type: sqlite
+    path: ./data.db
+    tables:
+      widgets:
+        columns:
+          - id INTEGER PRIMARY KEY AUTOINCREMENT
+          - name TEXT NOT NULL
+          - updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+
+routes:
+  # Mutating admin route — RBAC-gated and audited.
+  - path: /admin/widgets
+    method: POST
+    type: storage-access
+    auth: ["session"]
+    require_roles: ["admin"]
+    inputs:
+      - { name: name, source: body, type: string, required: true, min: 1, max: 80 }
+    storage-access:
+      source: app
+      execute: "INSERT INTO widgets(name) VALUES ({{name}})"
+      response_content_type: application/json
+      output_template: '{"id": {{.LastInsertID}}}'
+
+  - path: /admin/widgets/{id}
+    method: DELETE
+    type: storage-access
+    auth: ["session"]
+    require_roles: ["admin"]
+    inputs:
+      - { name: id, source: path, type: int, required: true }
+    storage-access:
+      source: app
+      execute: "DELETE FROM widgets WHERE id = {{id}}"
+      response_content_type: application/json
+      output_template: '{"deleted": {{.RowsAffected}}}'
+
+  # Read recent widgets (admin-readable list, audited as a view event).
+  - path: /admin/widgets
+    method: GET
+    type: storage-access
+    auth: ["session"]
+    require_roles: ["admin"]
+    storage-access:
+      source: app
+      execute: "SELECT id, name, updated_at FROM widgets ORDER BY id DESC LIMIT 100"
+      response_content_type: application/json
+      output_template: "{{toJSON .Data}}"

@@ -1,0 +1,71 @@
+# Multi-broker fan-out hub. Three named SSE connections; ingest routes
+# publish to one broker each. POST /ingest/all publishes to every broker.
+#
+# Run:
+#   wave serve examples/apps/event-fanout-hub/server.yaml --port 8206
+
+default:
+  host: 127.0.0.1
+  port: 8206
+
+connections:
+  payments:
+    type: sse
+    subscribe_path: /events/payments
+    subscribe_cors_origins: ["*"]
+  users:
+    type: sse
+    subscribe_path: /events/users
+    subscribe_cors_origins: ["*"]
+  audit:
+    type: sse
+    subscribe_path: /events/audit
+    subscribe_cors_origins: ["*"]
+
+routes:
+  # Per-type ingest. Send to /ingest/payments to publish to the payments
+  # broker only, etc. Use the request_schema to validate inputs.
+  - path: /ingest/payments
+    method: POST
+    type: stream-publish
+    stream-publish:
+      connection: payments
+      route_id: payments_in
+      event_type: payment
+      static_meta: { topic: payments }
+    request_schema:
+      inline:
+        type: object
+        required: [type]
+        properties:
+          type: { type: string, enum: ["payment"] }
+
+  - path: /ingest/users
+    method: POST
+    type: stream-publish
+    stream-publish:
+      connection: users
+      route_id: users_in
+      event_type: user
+      static_meta: { topic: users }
+    request_schema:
+      inline:
+        type: object
+        required: [type]
+        properties:
+          type: { type: string, enum: ["user"] }
+
+  - path: /ingest/audit
+    method: POST
+    type: stream-publish
+    stream-publish:
+      connection: audit
+      route_id: audit_in
+      event_type: audit
+      static_meta: { topic: audit }
+    request_schema:
+      inline:
+        type: object
+        required: [type]
+        properties:
+          type: { type: string, enum: ["audit"] }

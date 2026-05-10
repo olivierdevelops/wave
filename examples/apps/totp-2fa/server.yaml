@@ -1,0 +1,88 @@
+# Magic-link login PLUS TOTP-based second factor.
+#
+# Flow:
+#   1. POST /auth/login/request — email yourself a magic link.
+#   2. GET  /auth/login/consume?token=... — first factor done, session cookie set.
+#   3. POST /totp/enroll  → returns secret + otpauth URL (scan into Authenticator).
+#   4. POST /totp/confirm — submit first 6-digit code; persists the secret.
+#   5. POST /totp/verify  — supply a code to step up before /dashboard.
+
+default:
+  host: localhost
+  port: 8008
+
+auth:
+  session:
+    type: jwt
+    token_location: cookie
+    cookie_name: wave_session
+    secret: dev-secret-change-me
+    token_duration_seconds: 86400
+
+routes:
+  - path: /login
+    method: GET
+    type: content
+    content:
+      content_type: text/html
+      body: |
+        <!doctype html>
+        <title>totp-2fa demo</title>
+        <h1>Magic-link + TOTP demo</h1>
+        <p>1. Request a link, copy it from server stderr, open it.</p>
+        <p>2. POST /totp/enroll, scan QR / otpauth URL, POST /totp/confirm.</p>
+        <p>3. POST /totp/verify with the latest code, then GET /dashboard.</p>
+
+  - path: /auth/login/request
+    method: POST
+    type: magic-link-request
+    magic-link-request:
+      callback_url: http://localhost:8008/auth/login/consume
+      from_email: noreply@example.com
+      subject: "Your sign-in link"
+
+  - path: /auth/login/consume
+    method: GET
+    type: magic-link-consume
+    magic-link-consume:
+      success_redirect: /enrolled
+
+  - path: /enrolled
+    method: GET
+    type: content
+    auth: ["session"]
+    content:
+      content_type: text/html
+      body: |
+        <h1>First factor complete.</h1>
+        <p>Now POST /totp/enroll and follow the QR code.</p>
+
+  # ── TOTP enrollment + verify ─────────────────────────────────────
+  - path: /totp/enroll
+    method: POST
+    type: totp-enroll-start
+    auth: ["session"]
+    totp-enroll-start:
+      issuer: wave-demo
+
+  - path: /totp/confirm
+    method: POST
+    type: totp-enroll-confirm
+    auth: ["session"]
+    totp-enroll-confirm: {}
+
+  - path: /totp/verify
+    method: POST
+    type: totp-verify
+    auth: ["session"]
+    totp-verify: {}
+
+  - path: /dashboard
+    method: GET
+    type: content
+    auth: ["session"]
+    content:
+      content_type: text/html
+      body: |
+        <h1>Dashboard</h1>
+        <p>Reachable after a successful POST /totp/verify in this session.</p>

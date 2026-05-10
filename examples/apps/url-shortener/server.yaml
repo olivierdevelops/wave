@@ -1,0 +1,64 @@
+# url-shortener — POST /shorten returns a short slug; GET /{slug}
+# resolves and redirects (via meta-refresh + JS, since storage-access
+# routes return bodies, not 302s).
+#
+#   wave serve examples/apps/url-shortener/server.yaml --port 8102
+
+default:
+  host: 127.0.0.1
+  port: 8102
+
+storage:
+  links:
+    type: sqlite
+    path: ./data.db
+    tables:
+      links:
+        columns:
+          - slug TEXT PRIMARY KEY
+          - url  TEXT NOT NULL
+          - created_at TEXT NOT NULL DEFAULT (datetime('now'))
+
+routes:
+  # Create a short link. Body: {"slug": "abc123", "url": "https://..."}.
+  # Slug is supplied by the client (keeps the demo SQL simple); replace
+  # with a server-side hash if you'd rather generate it.
+  - path: /shorten
+    method: POST
+    type: storage-access
+    inputs:
+      - { name: slug, source: body, type: string, required: true, pattern: "^[A-Za-z0-9_-]{3,32}$" }
+      - { name: url,  source: body, type: string, required: true, min: 4 }
+    storage-access:
+      source: links
+      execute: "INSERT INTO links(slug, url) VALUES ({{slug}}, {{url}})"
+      response_content_type: application/json
+      output_template: '{"short": "/{{slug}}"}'
+
+  # Resolve and redirect.
+  - path: /r/{slug}
+    method: GET
+    type: storage-access
+    inputs:
+      - { name: slug, source: path, type: string, required: true, pattern: "^[A-Za-z0-9_-]{3,32}$" }
+    storage-access:
+      source: links
+      execute: "SELECT url FROM links WHERE slug = {{slug}} LIMIT 1"
+      response_content_type: text/html
+      output_template: |
+        <!doctype html>
+        <meta http-equiv="refresh" content="0; url={{ .Data.url }}">
+        <script>location.replace({{ .Data.url | toJSON }})</script>
+        <a href="{{ .Data.url }}">Continue</a>
+
+  # JSON lookup (debug / API).
+  - path: /links/{slug}
+    method: GET
+    type: storage-access
+    inputs:
+      - { name: slug, source: path, type: string, required: true }
+    storage-access:
+      source: links
+      execute: "SELECT slug, url, created_at FROM links WHERE slug = {{slug}} LIMIT 1"
+      response_content_type: application/json
+      output_template: "{{toJSON .Data}}"

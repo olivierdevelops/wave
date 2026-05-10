@@ -1,0 +1,44 @@
+# static-and-api — SPA frontend + reverse-proxied API on one port.
+#
+# A single Wave server hosting:
+#   /          → static SPA from ./web
+#   /api/*     → forwarded to https://httpbin.org
+#
+# The classic "one binary, one port, deploy as a single container"
+# layout. Bread-and-butter Wave.
+
+default:
+  host: localhost
+  port: 8306
+
+routes:
+  # API gets registered FIRST so it can't be shadowed by the SPA.
+  - path: /api/
+    method: GET
+    type: forward
+    description: Backend API proxy (GET)
+    forward:
+      forward_url: https://httpbin.org
+
+  - path: /api/
+    method: POST
+    type: forward
+    description: Backend API proxy (POST)
+    forward:
+      forward_url: https://httpbin.org
+
+  # SPA index page — explicit `/` → index.html (Wave's static handler
+  # doesn't auto-serve directory indexes).
+  - path: /{$}
+    method: GET
+    type: file
+    description: SPA entry point
+    file:
+      filepath: ./web/index.html
+
+  # Static asset directory for everything else under /.
+  - path: /
+    type: static
+    description: SPA assets (JS, CSS, images)
+    static:
+      dir: ./web

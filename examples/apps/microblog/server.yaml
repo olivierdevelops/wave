@@ -1,0 +1,137 @@
+# microblog — Twitter-lite. 280-char posts, public timeline,
+# per-user pages, live updates over SSE. Magic-link auth.
+#
+#   wave serve examples/apps/microblog/server.yaml --port 8504
+#
+# Sign in at /app, post your first quack at /app, watch the
+# timeline tick in another browser tab.
+
+default:
+  host: 127.0.0.1
+  port: 8504
+
+env:
+  SECRET_KEY:
+    description: "JWT signing secret"
+    default: "dev-secret-change-me-in-production"
+
+auth:
+  session:
+    type: jwt
+    token_location: cookie
+    cookie_name: wave_session
+    secret: dev
+    token_duration_seconds: 86400
+
+storage:
+  mb:
+    type: sqlite
+    path: ./data.db
+    tables:
+      posts:
+        columns:
+          - id INTEGER PRIMARY KEY AUTOINCREMENT
+          - handle TEXT NOT NULL
+          - body TEXT NOT NULL
+          - created_at TEXT NOT NULL DEFAULT (datetime('now'))
+
+connections:
+  timeline:
+    type: sse
+    subscribe_path: /events/timeline
+    keep_alive_interval: 15s
+    buffer_size: 64
+    subscribe_cors_origins: ["*"]
+
+routes:
+  - path: /app
+    method: GET
+    type: file
+    file: { filepath: ./web/index.html }
+
+  # Magic-link auth ──────────────────────────────────────────────────
+  - path: /auth/login/request
+    method: POST
+    type: magic-link-request
+    magic-link-request:
+      callback_url: http://127.0.0.1:8504/auth/login/consume
+      from_email: noreply@microblog.local
+      subject: "Sign in to microblog"
+      ttl_seconds: 600
+      email_body: |
+        Sign in: {{.Link}}
+
+        Expires in {{.MinutesValid}} minutes.
+
+  - path: /auth/login/consume
+    method: GET
+    type: magic-link-consume
+    magic-link-consume: { success_redirect: /app }
+
+  - path: /auth/logout
+    method: POST
+    type: auth-logout
+    auth-logout: { redirect: /app }
+
+  - path: /me
+    method: GET
+    type: storage-access
+    auth: ["session"]
+    storage-access:
+      source: mb
+      execute: "SELECT {{var (getUser).Username}} AS handle"
+      response_content_type: application/json
+      output_template: '{{toJSON .Data}}'
+
+  # Public timeline (newest 100). No auth — anonymous can read.
+  - path: /timeline
+    method: GET
+    type: storage-access
+    storage-access:
+      source: mb
+      execute: |
+        SELECT id, handle, body, created_at
+        FROM posts ORDER BY id DESC LIMIT 100
+      response_content_type: application/json
+      output_template: '{{toJSON .Data}}'
+
+  # User page.
+  - path: /u/{handle}
+    method: GET
+    type: storage-access
+    inputs:
+      - { name: handle, source: path, type: string, required: true, max: 200 }
+    storage-access:
+      source: mb
+      execute: |
+        SELECT id, handle, body, created_at
+        FROM posts WHERE handle = {{handle}}
+        ORDER BY id DESC LIMIT 100
+      response_content_type: application/json
+      output_template: '{{toJSON .Data}}'
+
+  # Post a 280-char quack. Authed.
+  - path: /posts
+    method: POST
+    type: storage-access
+    auth: ["session"]
+    inputs:
+      - { name: body, source: body, type: string, required: true, min: 1, max: 280 }
+    storage-access:
+      source: mb
+      execute: |
+        INSERT INTO posts(handle, body)
+        VALUES ({{var (getUser).Username}}, {{body}})
+      response_content_type: application/json
+      output_template: '{"id": {{.LastInsertID}}}'
+
+  # Notify subscribers a new post landed. Frontend hits this after a
+  # successful POST /posts so the broker fan-out is decoupled.
+  - path: /posts/notify
+    method: POST
+    type: stream-publish
+    auth: ["session"]
+    stream-publish:
+      connection: timeline
+      route_id: timeline_updates
+      event_type: post

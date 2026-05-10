@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Wave SPA Demo</title>
+<style>
+  body { font: 15px/1.5 system-ui, -apple-system, sans-serif; max-width: 720px;
+         margin: 2rem auto; padding: 0 1rem; color: #222; }
+  h1 { margin: 0 0 1rem; }
+  ul#items { list-style: none; padding: 0; }
+  ul#items li { padding: .75rem; border: 1px solid #ddd; margin-bottom: .5rem;
+                border-radius: 4px; display: flex; justify-content: space-between; }
+  .price { color: #0b66c3; font-weight: 600; }
+  #cart { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #ddd; }
+  button { padding: .25rem .75rem; cursor: pointer; }
+  .muted { color: #666; }
+</style>
+</head>
+<body>
+  <h1>Wave SPA Demo</h1>
+  <p class="muted">A vanilla-JS SPA bundled by Wave's startup bundler.</p>
+  <h2>Catalog</h2>
+  <ul id="items"><li class="muted">Loading…</li></ul>
+  <section id="cart">
+    <h2>Cart (<span id="cart-count">0</span>)</h2>
+    <ul id="cart-list"></ul>
+    <p>Total: <span class="price" id="cart-total">$0.00</span></p>
+  </section>
+</body>
+</html>

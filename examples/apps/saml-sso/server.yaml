@@ -1,0 +1,76 @@
+# Enterprise SAML 2.0 SSO via the saml-auth plugin.
+#
+# Wave delegates identity to the plugin; sessions, cookies and JWTs
+# stay in the orchestrator. The plugin lives at
+# examples/plugins/saml-auth/ — build it first, then point at it.
+
+default:
+  host: localhost
+  port: 8007
+
+env:
+  SAML_IDP_METADATA_URL: { description: "URL of the IdP metadata XML" }
+  SAML_SP_ENTITY_ID:     { description: "SP entity ID (usually a URL)" }
+  SAML_SP_ACS_URL:       { description: "Assertion Consumer Service URL" }
+  SAML_SP_CERT_PATH:     { description: "Path to the SP signing cert (PEM)" }
+  SAML_SP_KEY_PATH:      { description: "Path to the SP private key (PEM)" }
+
+plugins:
+  saml_corp:
+    kind: auth
+    transport: process
+    command: ../../plugins/saml-auth/wave-saml
+    env:
+      SAML_IDP_METADATA_URL: "${ENV:SAML_IDP_METADATA_URL}"
+      SAML_SP_ENTITY_ID:     "${ENV:SAML_SP_ENTITY_ID}"
+      SAML_SP_ACS_URL:       "${ENV:SAML_SP_ACS_URL}"
+      SAML_SP_CERT_PATH:     "${ENV:SAML_SP_CERT_PATH}"
+      SAML_SP_KEY_PATH:      "${ENV:SAML_SP_KEY_PATH}"
+
+auth:
+  corp_sso:
+    type: plugin
+    plugin: saml_corp
+    token_location: cookie
+    cookie_name: corp_session
+    secret: dev-secret-change-me
+    token_duration_seconds: 28800
+    redirect_on_success: /dashboard
+    redirect_on_failure: /login
+
+routes:
+  - path: /login
+    method: GET
+    type: content
+    content:
+      content_type: text/html
+      body: |
+        <!doctype html>
+        <title>SAML SSO demo</title>
+        <h1>Corporate SSO</h1>
+        <p><a href="/auth/login">Sign in via SAML →</a></p>
+
+  # auth-login on a plugin-backed config triggers the plugin's
+  # `saml_init` method, which returns a redirect to the IdP.
+  - path: /auth/login
+    method: GET
+    type: auth-login
+    auth-login:
+      for: corp_sso
+
+  # The IdP POSTs the SAMLResponse back to the ACS path. The plugin's
+  # `saml_callback` method validates it.
+  - path: /saml/acs
+    method: POST
+    type: auth-login
+    auth-login:
+      for: corp_sso
+      redirect_on_success: /dashboard
+
+  - path: /dashboard
+    method: GET
+    type: content
+    auth: ["corp_sso"]
+    content:
+      content_type: text/html
+      body: "<h1>Welcome to the corp dashboard.</h1>"

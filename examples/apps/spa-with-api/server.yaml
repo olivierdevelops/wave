@@ -1,0 +1,49 @@
+# spa-with-api — vanilla SPA with a JSON backend.
+#
+# Wave's startup bundler concatenates the JS files under frontend/src/
+# into a single dist/app.bundle.js, then auto-registers a static route
+# serving the dist/ directory at /. The /api/items route returns JSON
+# loaded from data/items.json (via type:file).
+#
+#   wave serve examples/apps/spa-with-api/server.yaml --port 8403
+# Then open http://127.0.0.1:8403/
+
+default:
+  host: 127.0.0.1
+  port: 8403
+
+# The build block is the heart of this example. At startup, Wave
+# concatenates the JS files in order, minifies, hashes for cache-bust,
+# and writes dist/app.bundle.js + dist/index.html. dist/ is then served
+# at / via an auto-registered static route. The bundler-generated
+# index.html is reachable at /index.html (which 301-redirects to /,
+# so we serve our index explicitly via a `file` route below).
+build:
+  enabled: true
+  dist_dir: "dist"
+  bundle_name: "app.bundle.js"
+  cache_bust: true
+  index_template: "frontend/index.html"
+  js_files:
+    - "frontend/src/util.js"
+    - "frontend/src/store.js"
+    - "frontend/src/views.js"
+    - "frontend/src/app.js"
+
+routes:
+  # The "API". A static JSON file dressed up as an API endpoint.
+  - path: /api/items
+    method: GET
+    type: file
+    file:
+      filepath: ./data/items.json
+
+  # Convenience: serve the bundler-generated index.html at /app so
+  # browsers can navigate to a working URL. (The bundler auto-mounts
+  # dist/ at / via a static route, but Wave's static handler does not
+  # auto-resolve directory-default index.html — see README caveat.)
+  - path: /app
+    method: GET
+    type: file
+    file:
+      filepath: ./dist/index.html

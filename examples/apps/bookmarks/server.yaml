@@ -1,0 +1,89 @@
+# bookmarks — per-user bookmarks scoped by the JWT-authenticated user.
+#
+#   wave serve examples/apps/bookmarks/server.yaml --port 8103
+#
+# The spec called for "magic-link auth"; that requires SMTP wiring to be
+# self-contained, so this example uses cookie-bearing JWT auth with a
+# pre-seeded login. Swap `auth.user.type: magic-link` plus
+# `auth_flows.smtp` for production.
+
+default:
+  host: 127.0.0.1
+  port: 8103
+
+env:
+  SECRET_KEY:
+    description: "HS256 signing key for JWT cookies"
+    default: "dev-only-change-me-in-prod"
+
+auth:
+  user:
+    type: jwt
+    token_location: cookie
+    cookie_name: auth_token
+    token_duration_seconds: 86400
+    secret: dev-only-change-me-in-prod
+    user_store: memory
+    redirect_on_failure: /login.html
+    default_logins:
+      - { username: alice, password: alicepw }
+      - { username: bob,   password: bobpw }
+
+storage:
+  bm:
+    type: sqlite
+    path: ./data.db
+    tables:
+      bookmarks:
+        columns:
+          - id INTEGER PRIMARY KEY AUTOINCREMENT
+          - owner TEXT NOT NULL
+          - title TEXT NOT NULL
+          - url   TEXT NOT NULL
+          - created_at TEXT NOT NULL DEFAULT (datetime('now'))
+
+routes:
+  # Login form posts here. Cookie set on success.
+  - path: /login
+    method: POST
+    type: auth-login
+    auth-login:
+      for: user
+
+  - path: /logout
+    method: POST
+    type: auth-logout
+    auth-logout:
+      for: user
+
+  # List my bookmarks. `getUser` is a built-in template fn that returns
+  # the authenticated PublicUser pulled from the JWT cookie; `.Username`
+  # is the scope key.
+  - path: /bookmarks
+    method: GET
+    type: storage-access
+    auth: [user]
+    storage-access:
+      source: bm
+      execute: |
+        SELECT id, title, url, created_at FROM bookmarks
+        WHERE owner = {{ wrap (printf "%s" getUser.Username) }}
+        ORDER BY id DESC
+      response_content_type: application/json
+      output_template: "{{toJSON .Data}}"
+
+  # Create a bookmark for the authenticated user.
+  - path: /bookmarks
+    method: POST
+    type: storage-access
+    auth: [user]
+    inputs:
+      - { name: title, source: body, type: string, required: true, min: 1, max: 200 }
+      - { name: url,   source: body, type: string, required: true, min: 4, max: 2000 }
+    storage-access:
+      source: bm
+      execute: |
+        INSERT INTO bookmarks(owner, title, url)
+        VALUES ({{ wrap (printf "%s" getUser.Username) }}, {{title}}, {{url}})
+      response_content_type: application/json
+      output_template: '{"id": {{.LastInsertID}}}'

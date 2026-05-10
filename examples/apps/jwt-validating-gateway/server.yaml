@@ -1,0 +1,43 @@
+# jwt-validating-gateway — verify inbound JWT, then forward.
+#
+# The gateway validates a HS256 JWT on every request to /api/* using
+# the shared secret from $SECRET_KEY. On invalid/missing token the
+# request is rejected with 401 BEFORE it ever reaches the upstream.
+# The upstream (httpbin.org) receives only authenticated traffic.
+#
+# Run with:
+#   SECRET_KEY=devsecret wave serve examples/apps/jwt-validating-gateway/server.yaml
+
+default:
+  host: localhost
+  port: 8304
+
+env:
+  SECRET_KEY:
+    description: HS256 signing secret for inbound JWTs
+
+auth:
+  default:
+    type: jwt
+    token_location: header
+    header_name: Authorization
+    header_scheme: Bearer
+
+routes:
+  - path: /api/
+    method: GET
+    type: forward
+    description: JWT-protected proxy to httpbin
+    auth: [default]
+    forward:
+      forward_url: https://httpbin.org
+      include_headers:
+        - ["X-Forwarded-By", "wave-jwt-gateway"]
+
+  - path: /api/
+    method: POST
+    type: forward
+    description: JWT-protected POST proxy
+    auth: [default]
+    forward:
+      forward_url: https://httpbin.org

@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Wave Docs</title>
+<link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+  <aside id="sidebar">
+    <h2>Wave Docs</h2>
+    <nav id="nav"><p class="muted">Loading…</p></nav>
+  </aside>
+  <main>
+    <header>
+      <input id="search" placeholder="Filter pages…" />
+    </header>
+    <iframe id="content" src="/docs/getting-started.md" title="docs"></iframe>
+  </main>
+  <script>
+    const navEl = document.getElementById('nav');
+    const content = document.getElementById('content');
+    const search = document.getElementById('search');
+
+    fetch('/assets/nav.json').then(r => r.json()).then(nav => {
+      const html = nav.sections.map(sec => `
+        <section>
+          <h3>${sec.title}</h3>
+          <ul>${sec.pages.map(p => `
+            <li><a href="#" data-href="/docs/${p.file}">${p.label}</a></li>`).join('')}</ul>
+        </section>`).join('');
+      navEl.innerHTML = html;
+      navEl.querySelectorAll('a').forEach(a => {
+        a.addEventListener('click', e => {
+          e.preventDefault();
+          content.src = a.dataset.href;
+          navEl.querySelectorAll('a').forEach(x => x.classList.remove('active'));
+          a.classList.add('active');
+        });
+      });
+    });
+
+    search.addEventListener('input', () => {
+      const q = search.value.toLowerCase();
+      navEl.querySelectorAll('li').forEach(li => {
+        li.style.display = li.textContent.toLowerCase().includes(q) ? '' : 'none';
+      });
+    });
+  </script>
+</body>
+</html>

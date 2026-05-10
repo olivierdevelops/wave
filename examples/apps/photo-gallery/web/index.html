@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Wave Photo Gallery</title>
+<link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+  <header>
+    <h1>Wave Photo Gallery</h1>
+    <p class="muted">Click a thumbnail to open the lightbox.</p>
+  </header>
+
+  <main id="grid" class="grid"><p class="muted">Loading…</p></main>
+
+  <div id="lightbox" hidden>
+    <button id="close" aria-label="Close">×</button>
+    <img id="full" alt="">
+    <p id="caption"></p>
+  </div>
+
+  <script>
+    const grid = document.getElementById('grid');
+    const box  = document.getElementById('lightbox');
+    const full = document.getElementById('full');
+    const cap  = document.getElementById('caption');
+
+    function open(p) {
+      full.src = '/photos/' + p.file;
+      cap.textContent = p.caption;
+      box.hidden = false;
+    }
+    function close() { box.hidden = true; full.src = ''; }
+
+    document.getElementById('close').onclick = close;
+    box.addEventListener('click', e => { if (e.target === box) close(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
+
+    fetch('/photos/manifest.json').then(r => r.json()).then(photos => {
+      grid.innerHTML = '';
+      photos.forEach(p => {
+        const fig = document.createElement('figure');
+        const img = document.createElement('img');
+        img.src = '/photos/' + p.file;
+        img.alt = p.caption;
+        img.loading = 'lazy';
+        img.addEventListener('click', () => open(p));
+        const cap = document.createElement('figcaption');
+        cap.textContent = p.caption;
+        fig.append(img, cap);
+        grid.appendChild(fig);
+      });
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,131 @@
+# pastebin — anonymous code-paste service.
+#
+#   wave serve examples/apps/pastebin/server.yaml --port 8502
+#
+# POST /pastes  {content, language?, expires_at?, view_limit?}
+#   → {slug}
+# GET  /p/{slug}  → HTML view with Prism syntax highlighting
+# GET  /raw/{slug} → text/plain
+#
+# Pastes that exceed view_limit or expires_at are filtered out at
+# read time (a sweep job could hard-delete them).
+
+default:
+  host: 127.0.0.1
+  port: 8502
+
+storage:
+  pb:
+    type: sqlite
+    path: ./data.db
+    tables:
+      pastes:
+        columns:
+          - id INTEGER PRIMARY KEY AUTOINCREMENT
+          - slug TEXT NOT NULL UNIQUE
+          - content TEXT NOT NULL
+          - language TEXT NOT NULL DEFAULT 'plaintext'
+          - created_at TEXT NOT NULL DEFAULT (datetime('now'))
+          - expires_at TEXT
+          - view_limit INTEGER
+          - views INTEGER NOT NULL DEFAULT 0
+
+routes:
+  # Landing page — paste form.
+  - path: /app
+    method: GET
+    type: file
+    file: { filepath: ./web/index.html }
+
+  # Create paste. Slug is generated from the row id once we know it.
+  # We INSERT first with a temp slug, then UPDATE to a base36 slug.
+  - path: /pastes
+    method: POST
+    type: storage-access
+    inputs:
+      - { name: content,    source: body, type: string, required: true, min: 1, max: 100000 }
+      - { name: language,   source: body, type: string, default: "plaintext", max: 32 }
+      - { name: expires_at, source: body, type: string, default: "" }
+      - { name: view_limit, source: body, type: int,    default: 0 }
+    storage-access:
+      source: pb
+      execute: |
+        INSERT INTO pastes(slug, content, language, expires_at, view_limit)
+        VALUES (
+          lower(hex(randomblob(5))),
+          {{content}},
+          {{language}},
+          NULLIF({{expires_at}}, ''),
+          NULLIF({{view_limit}}, 0)
+        )
+      response_content_type: application/json
+      # The slug is generated in SQL; we return the row id and let
+      # the client GET /pastes/{id}/slug to fetch it (simpler than a
+      # multi-statement RETURNING dance).
+      output_template: '{"id": {{.LastInsertID}}}'
+
+  # Helper: id → slug. The frontend POSTs, then GETs this to learn
+  # the URL.
+  - path: /pastes/{id}/slug
+    method: GET
+    type: storage-access
+    inputs:
+      - { name: id, source: path, type: int, required: true }
+    storage-access:
+      source: pb
+      execute: "SELECT slug FROM pastes WHERE id = {{id}} LIMIT 1"
+      response_content_type: application/json
+      output_template: '{{toJSON .Data}}'
+
+  # Show a paste with syntax highlighting (server-side template).
+  - path: /p/{slug}
+    method: GET
+    type: storage-access
+    inputs:
+      - { name: slug, source: path, type: string, required: true, max: 32 }
+    storage-access:
+      source: pb
+      execute: |
+        UPDATE pastes SET views = views + 1 WHERE slug = {{slug}};
+        SELECT slug, content, language, created_at, expires_at, view_limit, views
+        FROM pastes
+        WHERE slug = {{slug}}
+          AND (expires_at IS NULL OR expires_at > datetime('now'))
+          AND (view_limit IS NULL OR views <= view_limit)
+        LIMIT 1
+      response_content_type: text/html
+      output_template: |
+        <!doctype html><html><head><meta charset="utf-8">
+        <title>paste {{.Data.slug}}</title>
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1/themes/prism.css">
+        <style>body{font:14px/1.4 system-ui;max-width:900px;margin:1.5rem auto;padding:0 1rem}
+        .meta{color:#888;font-size:.85em;margin-bottom:.6rem}
+        pre{background:#f6f6f6;padding:1rem;border-radius:6px;overflow:auto}</style>
+        </head><body>
+        <h2>paste · {{.Data.slug}}</h2>
+        <div class="meta">{{.Data.language}} · created {{.Data.created_at}} · {{.Data.views}} views ·
+        <a href="/raw/{{.Data.slug}}">raw</a></div>
+        <pre><code class="language-{{.Data.language}}">{{.Data.content}}</code></pre>
+        <script src="https://cdn.jsdelivr.net/npm/prismjs@1/prism.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-javascript.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-python.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-go.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-bash.min.js"></script>
+        </body></html>
+
+  # Raw text dump.
+  - path: /raw/{slug}
+    method: GET
+    type: storage-access
+    inputs:
+      - { name: slug, source: path, type: string, required: true, max: 32 }
+    storage-access:
+      source: pb
+      execute: |
+        SELECT content
+        FROM pastes
+        WHERE slug = {{slug}}
+          AND (expires_at IS NULL OR expires_at > datetime('now'))
+        LIMIT 1
+      response_content_type: text/plain; charset=utf-8
+      output_template: '{{.Data.content}}'

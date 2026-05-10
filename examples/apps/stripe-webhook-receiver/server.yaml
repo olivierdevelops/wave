@@ -1,0 +1,36 @@
+# Stripe webhook receiver: verifies the Stripe-Signature header,
+# then fans the event out to any SSE subscribers on /events/payments.
+#
+# Run:
+#   STRIPE_WEBHOOK_SECRET=whsec_test wave serve \
+#     examples/apps/stripe-webhook-receiver/server.yaml --port 8201
+
+default:
+  host: 127.0.0.1
+  port: 8201
+
+env:
+  STRIPE_WEBHOOK_SECRET: { description: "Stripe webhook signing secret" }
+
+connections:
+  payments:
+    type: sse
+    subscribe_path: /events/payments
+    subscribe_cors_origins: ["*"]
+    keep_alive_interval: 15s
+    buffer_size: 64
+
+routes:
+  - path: /webhooks/stripe
+    method: POST
+    type: stream-publish
+    webhook_sig:
+      provider: stripe
+      secret: "${ENV:STRIPE_WEBHOOK_SECRET}"
+      tolerance_sec: 300
+    stream-publish:
+      connection: payments
+      route_id: stripe_events
+      event_type: payment
+      static_meta:
+        source: stripe

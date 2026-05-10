@@ -1,0 +1,75 @@
+# chat-room — anonymous global chat. No login. SSE for live.
+#
+#   wave serve examples/apps/chat-room/server.yaml --port 8505
+#
+# Open /app in two browser tabs, type messages in one, see them
+# tick into the other instantly.
+
+default:
+  host: 127.0.0.1
+  port: 8505
+
+storage:
+  chat:
+    type: sqlite
+    path: ./data.db
+    tables:
+      messages:
+        columns:
+          - id INTEGER PRIMARY KEY AUTOINCREMENT
+          - nick TEXT NOT NULL
+          - body TEXT NOT NULL
+          - created_at TEXT NOT NULL DEFAULT (datetime('now'))
+
+connections:
+  room:
+    type: sse
+    subscribe_path: /events/room
+    keep_alive_interval: 15s
+    buffer_size: 64
+    subscribe_cors_origins: ["*"]
+
+routes:
+  - path: /app
+    method: GET
+    type: file
+    file: { filepath: ./web/index.html }
+
+  # Last 100 messages for backfill on join.
+  - path: /history
+    method: GET
+    type: storage-access
+    storage-access:
+      source: chat
+      execute: |
+        SELECT id, nick, body, created_at FROM messages
+        ORDER BY id DESC LIMIT 100
+      response_content_type: application/json
+      output_template: '{{toJSON .Data}}'
+
+  # Send a message: persist + nothing more.
+  - path: /messages
+    method: POST
+    type: storage-access
+    inputs:
+      - { name: nick, source: body, type: string, required: true, min: 1, max: 32 }
+      - { name: body, source: body, type: string, required: true, min: 1, max: 500 }
+    storage-access:
+      source: chat
+      execute: |
+        INSERT INTO messages(nick, body) VALUES ({{nick}}, {{body}})
+      response_content_type: application/json
+      output_template: '{"id": {{.LastInsertID}}}'
+
+  # Fan-out endpoint — frontend POSTs the same payload here so SSE
+  # subscribers receive it immediately (without re-querying SQL).
+  - path: /broadcast
+    method: POST
+    type: stream-publish
+    stream-publish:
+      connection: room
+      route_id: chat
+      event_type: msg
+      output:
+        nick: response.nick
+        body: response.body

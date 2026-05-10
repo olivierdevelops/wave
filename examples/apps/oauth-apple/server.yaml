@@ -1,0 +1,65 @@
+# Sign in with Apple. The Apple OAuth flow is identical in shape
+# to Google/GitHub but instead of a static client_secret you pass
+# a Service-ID, Team-ID, Key-ID, and a .p8 ECDSA private key —
+# the provider builds a fresh signed JWT client_secret per request.
+
+default:
+  host: localhost
+  port: 8005
+
+env:
+  APPLE_SERVICE_ID:        { description: "Apple Service ID (used as client_id)" }
+  APPLE_TEAM_ID:           { description: "Apple Developer Team ID (10 chars)" }
+  APPLE_KEY_ID:            { description: "Apple Sign-In Key ID (10 chars)" }
+  APPLE_PRIVATE_KEY_PATH:  { description: "Path to AuthKey_<KEY_ID>.p8 file" }
+
+auth:
+  apple:
+    type: oauth
+    token_location: cookie
+    cookie_name: wave_session
+    secret: dev-secret-change-me
+    token_duration_seconds: 86400
+    oauth:
+      provider: apple
+      client_id:               "${ENV:APPLE_SERVICE_ID}"
+      apple_team_id:           "${ENV:APPLE_TEAM_ID}"
+      apple_key_id:            "${ENV:APPLE_KEY_ID}"
+      apple_private_key_path:  "${ENV:APPLE_PRIVATE_KEY_PATH}"
+      scopes: [name, email]
+
+routes:
+  - path: /login
+    method: GET
+    type: content
+    content:
+      content_type: text/html
+      body: |
+        <!doctype html>
+        <title>oauth-apple demo</title>
+        <h1>Sign in with Apple</h1>
+        <p><a href="/auth/apple">Continue with Apple →</a></p>
+
+  - path: /auth/apple
+    method: GET
+    type: oauth-start
+    oauth-start:
+      auth_config: apple
+      redirect_uri: http://localhost:8005/auth/apple/callback
+
+  - path: /auth/apple/callback
+    method: GET
+    type: oauth-callback
+    oauth-callback:
+      auth_config:     apple
+      redirect_uri:    http://localhost:8005/auth/apple/callback
+      success_redirect: /me
+      failure_redirect: /login
+
+  - path: /me
+    method: GET
+    type: content
+    auth: ["apple"]
+    content:
+      content_type: text/html
+      body: "<h1>Signed in with Apple.</h1>"

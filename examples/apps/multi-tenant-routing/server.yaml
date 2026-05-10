@@ -1,0 +1,32 @@
+# multi-tenant-routing — per-tenant upstream selection.
+#
+# Wave's `forward` route supports `{key}` placeholders in the
+# upstream URL — they're substituted at request time from path
+# parameters (Go 1.22 ServeMux PathValue). So a single route
+# definition fans out to one upstream per tenant, picked from the
+# request path.
+#
+# This example uses public httpbin endpoints to demonstrate the
+# templating without needing real per-tenant infrastructure.
+
+default:
+  host: localhost
+  port: 8305
+
+routes:
+  # /tenants/{tenant}/anything → forwarded to a templated httpbin URL
+  # that bakes the tenant name into the path. Replace the right-hand
+  # side with your real per-tenant base URL pattern in production.
+  - path: /tenants/{tenant}/anything
+    method: GET
+    type: forward
+    description: Multi-tenant proxy templated on the {tenant} path param
+    forward:
+      forward_url: https://httpbin.org/anything/tenant/{tenant}
+
+  - path: /tenants/{tenant}/headers
+    method: GET
+    type: forward
+    description: Templated forward — different upstream path per tenant
+    forward:
+      forward_url: https://httpbin.org/anything/{tenant}/headers

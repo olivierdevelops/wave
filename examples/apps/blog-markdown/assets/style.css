@@ -1,0 +1,13 @@
+:root { --fg:#222; --muted:#666; --bg:#fafafa; --link:#0b66c3; }
+* { box-sizing: border-box; }
+body { font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+       color: var(--fg); background: var(--bg); margin: 0;
+       padding: 2rem 1rem; max-width: 720px; margin-inline: auto; }
+header h1 { margin: 0 0 .25rem; }
+.muted { color: var(--muted); font-size: .9rem; }
+ul.posts { list-style: none; padding: 0; }
+ul.posts li { padding: 1rem 0; border-bottom: 1px solid #ddd; }
+ul.posts a { color: var(--link); text-decoration: none; font-size: 1.15rem; font-weight: 600; }
+ul.posts a:hover { text-decoration: underline; }
+.meta { display: block; color: var(--muted); font-size: .85rem; margin: .25rem 0 .5rem; }
+footer { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #ddd; }

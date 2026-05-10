@@ -1,0 +1,62 @@
+# Sign in with GitHub via OAuth 2.
+
+default:
+  host: localhost
+  port: 8004
+
+env:
+  GITHUB_CLIENT_ID:     { description: "GitHub OAuth App client ID" }
+  GITHUB_CLIENT_SECRET: { description: "GitHub OAuth App client secret" }
+
+auth:
+  github:
+    type: oauth
+    token_location: cookie
+    cookie_name: wave_session
+    secret: dev-secret-change-me
+    token_duration_seconds: 86400
+    oauth:
+      provider: github
+      client_id:     "${ENV:GITHUB_CLIENT_ID}"
+      client_secret: "${ENV:GITHUB_CLIENT_SECRET}"
+      scopes: [read:user, user:email]
+
+routes:
+  - path: /login
+    method: GET
+    type: content
+    content:
+      content_type: text/html
+      body: |
+        <!doctype html>
+        <title>oauth-github demo</title>
+        <h1>Sign in with GitHub</h1>
+        <p><a href="/auth/github">Continue with GitHub →</a></p>
+
+  - path: /auth/github
+    method: GET
+    type: oauth-start
+    oauth-start:
+      auth_config: github
+      redirect_uri: http://localhost:8004/auth/github/callback
+
+  - path: /auth/github/callback
+    method: GET
+    type: oauth-callback
+    oauth-callback:
+      auth_config:     github
+      redirect_uri:    http://localhost:8004/auth/github/callback
+      success_redirect: /profile
+      failure_redirect: /login
+
+  - path: /profile
+    method: GET
+    type: content
+    auth: ["github"]
+    content:
+      content_type: text/html
+      body: |
+        <h1>Signed in via GitHub</h1>
+        <p>Your GitHub identity claims (login, email, avatar) are
+        attached to the session JWT and used to authenticate
+        subsequent requests via the <code>wave_session</code> cookie.</p>

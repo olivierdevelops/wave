@@ -1,0 +1,47 @@
+# OpenID Connect (OIDC) sign-in against an Okta tenant.
+#
+# Wave hits the issuer's /.well-known/openid-configuration at boot
+# to discover JWKS and endpoints, then validates the ID token on
+# every protected request.
+
+default:
+  host: localhost
+  port: 8006
+
+env:
+  OKTA_DOMAIN:    { description: "e.g. dev-12345.okta.com" }
+  OKTA_CLIENT_ID: { description: "Okta application client ID" }
+
+auth:
+  okta:
+    type: oidc
+    token_location: header
+    header_name: Authorization
+    header_scheme: Bearer
+    secret: dev-secret-change-me
+    # The OIDC verifier is built at boot using these two fields.
+    issuer:    "https://${ENV:OKTA_DOMAIN}"
+    client_id: "${ENV:OKTA_CLIENT_ID}"
+
+routes:
+  - path: /index
+    method: GET
+    type: content
+    content:
+      content_type: text/html
+      body: |
+        <!doctype html>
+        <title>oidc-okta demo</title>
+        <h1>OIDC against Okta</h1>
+        <p>Send a request with a valid Okta-issued ID token in the
+        <code>Authorization: Bearer</code> header to access
+        <a href=/api/whoami>/api/whoami</a>.</p>
+
+  - path: /api/whoami
+    method: GET
+    type: content
+    auth: ["okta"]
+    content:
+      content_type: application/json
+      body: |
+        {"ok": true, "note": "ID token verified by Okta JWKS"}

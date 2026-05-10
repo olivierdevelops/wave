@@ -1,0 +1,144 @@
+# todo-app — classic per-user TODO list with magic-link auth.
+#
+#   wave serve examples/apps/todo-app/server.yaml --port 8501
+#
+# Sign in at /          (paste any email; the magic link is logged
+#                        to the server's stderr in dev mode)
+# Then add / check / delete TODOs scoped to your account.
+
+default:
+  host: 127.0.0.1
+  port: 8501
+
+# SECRET_KEY signs the JWT session cookie. Override in production.
+env:
+  SECRET_KEY:
+    description: "JWT signing secret"
+    default: "dev-secret-change-me-in-production"
+
+auth:
+  session:
+    type: jwt
+    token_location: cookie
+    cookie_name: wave_session
+    secret: dev-secret-change-me
+    token_duration_seconds: 86400
+
+storage:
+  todo:
+    type: sqlite
+    path: ./data.db
+    tables:
+      todos:
+        columns:
+          - id INTEGER PRIMARY KEY AUTOINCREMENT
+          - user_email TEXT NOT NULL
+          - title TEXT NOT NULL
+          - done INTEGER NOT NULL DEFAULT 0
+          - created_at TEXT NOT NULL DEFAULT (datetime('now'))
+
+routes:
+  # Tiny SPA at /app. (Bare "/" is reserved for the built-in
+  # /healthz probe, so the SPA lives one path-segment in.)
+  - path: /app
+    method: GET
+    type: file
+    file: { filepath: ./web/index.html }
+
+  # Magic-link sign-in flow ───────────────────────────────────────────
+  - path: /auth/login/request
+    method: POST
+    type: magic-link-request
+    magic-link-request:
+      callback_url: http://127.0.0.1:8501/auth/login/consume
+      from_email: noreply@todo-app.local
+      subject: "Your sign-in link"
+      ttl_seconds: 600
+      email_body: |
+        Sign in to todo-app:
+
+        {{.Link}}
+
+        Expires in {{.MinutesValid}} minutes.
+
+  - path: /auth/login/consume
+    method: GET
+    type: magic-link-consume
+    magic-link-consume:
+      success_redirect: /app
+
+  - path: /auth/logout
+    method: POST
+    type: auth-logout
+    auth-logout: { redirect: /app }
+
+  # Who am I? Used by the SPA to decide which view to render.
+  - path: /me
+    method: GET
+    type: storage-access
+    auth: ["session"]
+    storage-access:
+      source: todo
+      execute: "SELECT {{var (getUser).Username}} AS email"
+      response_content_type: application/json
+      output_template: '{{toJSON .Data}}'
+
+  # CRUD scoped to the signed-in user ─────────────────────────────────
+  - path: /todos
+    method: GET
+    type: storage-access
+    auth: ["session"]
+    storage-access:
+      source: todo
+      execute: |
+        SELECT id, title, done, created_at
+        FROM todos
+        WHERE user_email = {{var (getUser).Username}}
+        ORDER BY id DESC
+      response_content_type: application/json
+      output_template: '{{toJSON .Data}}'
+
+  - path: /todos
+    method: POST
+    type: storage-access
+    auth: ["session"]
+    inputs:
+      - { name: title, source: body, type: string, required: true, min: 1, max: 200 }
+    storage-access:
+      source: todo
+      execute: |
+        INSERT INTO todos(user_email, title)
+        VALUES ({{var (getUser).Username}}, {{title}})
+      response_content_type: application/json
+      output_template: '{"id": {{.LastInsertID}}}'
+
+  - path: /todos/{id}/toggle
+    method: POST
+    type: storage-access
+    auth: ["session"]
+    inputs:
+      - { name: id, source: path, type: int, required: true }
+    storage-access:
+      source: todo
+      execute: |
+        UPDATE todos
+        SET done = 1 - done
+        WHERE id = {{id}}
+          AND user_email = {{var (getUser).Username}}
+      response_content_type: application/json
+      output_template: '{"updated": {{.RowsAffected}}}'
+
+  - path: /todos/{id}
+    method: DELETE
+    type: storage-access
+    auth: ["session"]
+    inputs:
+      - { name: id, source: path, type: int, required: true }
+    storage-access:
+      source: todo
+      execute: |
+        DELETE FROM todos
+        WHERE id = {{id}}
+          AND user_email = {{var (getUser).Username}}
+      response_content_type: application/json
+      output_template: '{"deleted": {{.RowsAffected}}}'

@@ -1,0 +1,68 @@
+# tagged-search — items with a tags JSON column. Demonstrates
+# storing a list-of-strings in SQLite and filtering by membership.
+#
+#   wave serve examples/apps/tagged-search/server.yaml --port 8107
+
+default:
+  host: 127.0.0.1
+  port: 8107
+
+storage:
+  items:
+    type: sqlite
+    path: ./data.db
+    tables:
+      items:
+        columns:
+          - id INTEGER PRIMARY KEY AUTOINCREMENT
+          - name TEXT NOT NULL
+          - tags TEXT NOT NULL DEFAULT '[]'   # JSON array
+          - created_at TEXT NOT NULL DEFAULT (datetime('now'))
+
+routes:
+  # Create. Body: {"name":"...", "tags":["a","b"]}.
+  # SQLite stores tags as a JSON-encoded text column; sqlite3's json1
+  # extension lets us query it.
+  - path: /items
+    method: POST
+    type: storage-access
+    inputs:
+      - { name: name, source: body, type: string, required: true, min: 1, max: 200 }
+      - { name: tags, source: body, required: true }
+    storage-access:
+      source: items
+      execute: |
+        INSERT INTO items(name, tags)
+        VALUES ({{name}}, json({{tags}}))
+      response_content_type: application/json
+      output_template: '{"id": {{.LastInsertID}}}'
+
+  # List, with optional ?tag=xyz that filters via json_each on the
+  # tags column.
+  - path: /items
+    method: GET
+    type: storage-access
+    inputs:
+      - { name: tag, source: query, type: string, default: "" }
+    storage-access:
+      source: items
+      execute: |
+        SELECT i.id, i.name, json(i.tags) AS tags, i.created_at
+        FROM items i
+        WHERE ({{tag}} = '' OR EXISTS (
+          SELECT 1 FROM json_each(i.tags) je WHERE je.value = {{tag}}
+        ))
+        ORDER BY i.id DESC
+      response_content_type: application/json
+      output_template: "{{toJSON .Data}}"
+
+  - path: /items/{id}
+    method: GET
+    type: storage-access
+    inputs:
+      - { name: id, source: path, type: int, required: true }
+    storage-access:
+      source: items
+      execute: "SELECT id, name, json(tags) AS tags, created_at FROM items WHERE id = {{id}} LIMIT 1"
+      response_content_type: application/json
+      output_template: "{{toJSON .Data}}"

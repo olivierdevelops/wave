@@ -1,0 +1,62 @@
+# postgres-crud — items CRUD over Postgres via the `postgres-storage`
+# plugin. The plugin binary is built separately (see README); wave
+# resolves the `source: pg_main` reference against the kind:storage
+# plugin entry.
+#
+#   PG_DSN=postgres://user:pass@localhost:5432/wave \
+#     wave serve examples/apps/postgres-crud/server.yaml --port 8104
+
+default:
+  host: 127.0.0.1
+  port: 8104
+
+env:
+  PG_DSN: { description: "Postgres connection string (libpq URL)" }
+
+plugins:
+  pg_main:
+    kind: storage
+    transport: process
+    command: /tmp/wave-postgres        # rebuilt locally; see README
+    env:
+      PG_DSN: "${ENV:PG_DSN}"
+      PG_MAX_CONNS: "5"
+
+routes:
+  - path: /items
+    method: GET
+    type: storage-access
+    storage-access:
+      source: pg_main
+      execute: "SELECT id, name, qty, created_at FROM items ORDER BY id DESC"
+      response_content_type: application/json
+      output_template: "{{toJSON .Data}}"
+
+  - path: /items
+    method: POST
+    type: storage-access
+    inputs:
+      - { name: name, source: body, type: string, required: true, min: 1, max: 200 }
+      - { name: qty,  source: body, type: int,    default: 1, min: 0 }
+    storage-access:
+      source: pg_main
+      # The current postgres plugin uses text/template substitution
+      # rather than $1 binding (see docs/storage-plugins.md "Phase 2
+      # caveats") — quote string values with single quotes.
+      execute: |
+        INSERT INTO items(name, qty)
+        VALUES ('{{name}}', {{qty}})
+        RETURNING id
+      response_content_type: application/json
+      output_template: "{{toJSON .Data}}"
+
+  - path: /items/{id}
+    method: GET
+    type: storage-access
+    inputs:
+      - { name: id, source: path, type: int, required: true }
+    storage-access:
+      source: pg_main
+      execute: "SELECT id, name, qty, created_at FROM items WHERE id = {{id}}"
+      response_content_type: application/json
+      output_template: "{{toJSON .Data}}"

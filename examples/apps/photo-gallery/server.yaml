@@ -1,0 +1,32 @@
+# photo-gallery — static gallery with thumbnails + lightbox.
+#
+# Drop SVG/PNG/JPEG files into ./photos and add an entry to
+# ./photos/manifest.json. The index page (./web/index.html) fetches
+# that manifest at load time, builds a grid of thumbnails with
+# native lazy-loading, and clicking opens a lightbox overlay.
+#
+#   wave serve examples/apps/photo-gallery/server.yaml --port 8404
+# Then open http://127.0.0.1:8404/
+
+default:
+  host: 127.0.0.1
+  port: 8404
+
+routes:
+  - path: /
+    type: file
+    file:
+      filepath: ./web/index.html
+
+  # The manifest + the photos themselves live under /photos.
+  - path: /photos/
+    method: GET
+    type: static
+    static:
+      dir: ./photos
+
+  - path: /assets/
+    method: GET
+    type: static
+    static:
+      dir: ./assets

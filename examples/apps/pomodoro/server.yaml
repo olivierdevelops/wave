@@ -1,0 +1,123 @@
+# pomodoro — multi-user shared timer. One room per ?room=foo.
+#
+#   wave serve examples/apps/pomodoro/server.yaml --port 8507
+#
+# Open /app?room=team-a in two tabs. Hit start in one — both
+# count down. Pause/reset broadcasts to every member.
+
+default:
+  host: 127.0.0.1
+  port: 8507
+
+storage:
+  pomo:
+    type: sqlite
+    path: ./data.db
+    tables:
+      rooms:
+        columns:
+          - name TEXT PRIMARY KEY
+          # state: idle | running | paused
+          - state TEXT NOT NULL DEFAULT 'idle'
+          # remaining seconds when last paused, or full duration when idle
+          - remaining INTEGER NOT NULL DEFAULT 1500
+          # epoch when state went to running (0 otherwise)
+          - started_at INTEGER NOT NULL DEFAULT 0
+
+connections:
+  rooms:
+    type: sse
+    subscribe_path: /events/rooms
+    keep_alive_interval: 10s
+    buffer_size: 32
+    subscribe_cors_origins: ["*"]
+
+routes:
+  - path: /app
+    method: GET
+    type: file
+    file: { filepath: ./web/index.html }
+
+  # Read room state. Auto-creates a fresh idle room on first hit.
+  - path: /rooms/{name}
+    method: GET
+    type: storage-access
+    inputs:
+      - { name: name, source: path, type: string, required: true, max: 64 }
+    storage-access:
+      source: pomo
+      execute: |
+        INSERT INTO rooms(name) VALUES ({{name}})
+          ON CONFLICT(name) DO NOTHING;
+        SELECT name, state, remaining, started_at FROM rooms
+         WHERE name = {{name}} LIMIT 1
+      response_content_type: application/json
+      output_template: '{{toJSON .Data}}'
+
+  # Start: capture the start moment so clients can compute the
+  # remaining time from server-clock independently.
+  - path: /rooms/{name}/start
+    method: POST
+    type: storage-access
+    inputs:
+      - { name: name, source: path, type: string, required: true, max: 64 }
+    storage-access:
+      source: pomo
+      execute: |
+        INSERT INTO rooms(name) VALUES ({{name}})
+          ON CONFLICT(name) DO NOTHING;
+        UPDATE rooms
+           SET state = 'running',
+               started_at = strftime('%s','now')
+         WHERE name = {{name}}
+      response_content_type: application/json
+      output_template: '{"ok":true}'
+
+  # Pause: snapshot remaining time.
+  - path: /rooms/{name}/pause
+    method: POST
+    type: storage-access
+    inputs:
+      - { name: name, source: path, type: string, required: true, max: 64 }
+    storage-access:
+      source: pomo
+      execute: |
+        UPDATE rooms
+           SET remaining = MAX(0,
+                 remaining - (strftime('%s','now') - started_at)),
+               state = 'paused',
+               started_at = 0
+         WHERE name = {{name}} AND state = 'running'
+      response_content_type: application/json
+      output_template: '{"ok":true}'
+
+  # Reset to a fresh 25-minute idle.
+  - path: /rooms/{name}/reset
+    method: POST
+    type: storage-access
+    inputs:
+      - { name: name, source: path, type: string, required: true, max: 64 }
+    storage-access:
+      source: pomo
+      execute: |
+        INSERT INTO rooms(name) VALUES ({{name}})
+          ON CONFLICT(name) DO NOTHING;
+        UPDATE rooms
+           SET state = 'idle',
+               remaining = 1500,
+               started_at = 0
+         WHERE name = {{name}}
+      response_content_type: application/json
+      output_template: '{"ok":true}'
+
+  # Broadcast that something changed in this room. Every subscriber
+  # then re-fetches GET /rooms/{name} and re-renders.
+  - path: /rooms/notify
+    method: POST
+    type: stream-publish
+    stream-publish:
+      connection: rooms
+      route_id: room_change
+      event_type: change
+      output:
+        room: response.room

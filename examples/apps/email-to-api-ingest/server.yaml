@@ -1,0 +1,49 @@
+# email-to-api-ingest — inbound email parsing via a webhook.
+#
+# Mailgun and SendGrid Inbound Parse both POST form-encoded fields:
+#   from, subject, body-plain (Mailgun) / text (SendGrid).
+# This app accepts the Mailgun shape, validates with `inputs:`, and
+# stashes the email in SQLite.
+#
+# Run:
+#   wave serve examples/apps/email-to-api-ingest/server.yaml --port 8608
+
+default:
+  host: 127.0.0.1
+  port: 8608
+
+storage:
+  inbox:
+    type: sqlite
+    path: ./data.db
+    tables:
+      emails:
+        columns:
+          - id INTEGER PRIMARY KEY AUTOINCREMENT
+          - from_addr TEXT NOT NULL
+          - subject TEXT NOT NULL
+          - body TEXT NOT NULL
+          - received_at TEXT NOT NULL DEFAULT (datetime('now'))
+
+routes:
+  - path: /email/inbound
+    method: POST
+    type: storage-access
+    inputs:
+      - { name: from, source: form, type: string, required: true, max: 320 }
+      - { name: subject, source: form, type: string, required: true, max: 500 }
+      - { name: body, source: form, from: "body-plain", type: string, required: true, max: 100000 }
+    storage-access:
+      source: inbox
+      execute: "INSERT INTO emails(from_addr, subject, body) VALUES ({{from}}, {{subject}}, {{body}})"
+      response_content_type: application/json
+      output_template: '{"id": {{.LastInsertID}}}'
+
+  - path: /email/recent
+    method: GET
+    type: storage-access
+    storage-access:
+      source: inbox
+      execute: "SELECT id, from_addr, subject, received_at FROM emails ORDER BY id DESC LIMIT 50"
+      response_content_type: application/json
+      output_template: "{{toJSON .Data}}"

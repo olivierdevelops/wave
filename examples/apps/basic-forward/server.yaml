@@ -1,0 +1,23 @@
+# basic-forward — the simplest possible Wave reverse proxy.
+#
+# Every request to /api/* is forwarded to https://httpbin.org with the
+# /api prefix stripped. Run, then `curl http://localhost:8301/api/get`.
+
+default:
+  host: localhost
+  port: 8301
+
+routes:
+  - path: /api/
+    method: GET
+    type: forward
+    description: Proxy GETs under /api/ to httpbin.org
+    forward:
+      forward_url: https://httpbin.org
+
+  - path: /api/
+    method: POST
+    type: forward
+    description: Proxy POSTs under /api/ to httpbin.org
+    forward:
+      forward_url: https://httpbin.org

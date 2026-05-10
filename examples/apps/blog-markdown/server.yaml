@@ -1,0 +1,39 @@
+# blog-markdown — a tiny markdown blog.
+#
+# Posts live in ./posts/*.md. The index page is a hand-written HTML
+# template (served via type:file, is_template:true). Individual posts
+# are rendered by Wave's `file-server` route in `prettify: true` mode,
+# which converts markdown to HTML with Prism syntax-highlighting.
+#
+#   wave serve examples/apps/blog-markdown/server.yaml --port 8401
+# Then open http://127.0.0.1:8401/
+
+default:
+  host: 127.0.0.1
+  port: 8401
+
+routes:
+  # Index page: lists every post in ./posts. The template is rendered
+  # with html/template; the post list is hand-curated below in
+  # ./web/index.html via raw HTML so we keep things obvious.
+  - path: /
+    type: file
+    file:
+      filepath: ./web/index.html
+      is_template: true
+
+  # Each .md file under ./posts is rendered as HTML with Prism.
+  # Visit /posts/welcome.md, /posts/markdown-tour.md, ...
+  - path: /posts/
+    method: GET
+    type: file-server
+    file-server:
+      dir: ./posts
+      prettify: true
+
+  # Tiny stylesheet shared by index + post pages.
+  - path: /assets/
+    method: GET
+    type: static
+    static:
+      dir: ./assets

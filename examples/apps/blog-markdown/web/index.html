@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Wave blog</title>
+<link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+  <header>
+    <h1>The Wave Blog</h1>
+    <p class="muted">A demo of markdown-driven content served by wave.</p>
+  </header>
+  <main>
+    <ul class="posts">
+      <li>
+        <a href="/posts/welcome.md">Welcome to the Wave blog</a>
+        <span class="meta">2026-04-01 · intro</span>
+        <p>Why we built this and what to expect from upcoming posts.</p>
+      </li>
+      <li>
+        <a href="/posts/markdown-tour.md">A quick tour of markdown features</a>
+        <span class="meta">2026-04-08 · markdown, syntax</span>
+        <p>Headings, tables, code blocks with Prism syntax highlighting.</p>
+      </li>
+      <li>
+        <a href="/posts/wave-stack.md">Why we chose Wave for this site</a>
+        <span class="meta">2026-04-15 · wave, deployment</span>
+        <p>How a single YAML file replaced our static-site generator.</p>
+      </li>
+    </ul>
+  </main>
+  <footer>
+    <p class="muted">Served by Wave on {{.Request.Host}}</p>
+  </footer>
+</body>
+</html>

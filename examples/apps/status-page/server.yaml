@@ -1,0 +1,104 @@
+# status-page — public status board with admin-set service status.
+#
+#   wave serve examples/apps/status-page/server.yaml --port 8506
+#
+# Public:  GET /app                  — read-only status dashboard
+# Admin:   POST /admin/status        — set a service status (no auth in demo)
+# History is logged with timestamp + reason; SSE pushes changes to
+# all open dashboards.
+
+default:
+  host: 127.0.0.1
+  port: 8506
+
+# NOTE: this demo has no admin auth — anyone who can reach /admin/*
+# can flip statuses. For production, gate /admin/* with a real
+# `auth:` block (jwt + magic-link, oidc, etc.) or wrap behind
+# forward_auth (e.g. oauth2-proxy / Authelia).
+
+storage:
+  st:
+    type: sqlite
+    path: ./data.db
+    tables:
+      services:
+        columns:
+          - name TEXT PRIMARY KEY
+          - status TEXT NOT NULL DEFAULT 'operational'
+          - updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      log:
+        columns:
+          - id INTEGER PRIMARY KEY AUTOINCREMENT
+          - service TEXT NOT NULL
+          - status TEXT NOT NULL
+          - reason TEXT NOT NULL DEFAULT ''
+          - at TEXT NOT NULL DEFAULT (datetime('now'))
+
+connections:
+  status:
+    type: sse
+    subscribe_path: /events/status
+    keep_alive_interval: 15s
+    buffer_size: 32
+    subscribe_cors_origins: ["*"]
+
+routes:
+  - path: /app
+    method: GET
+    type: file
+    file: { filepath: ./web/index.html }
+
+  # Public: current status of every service.
+  - path: /status
+    method: GET
+    type: storage-access
+    storage-access:
+      source: st
+      execute: |
+        SELECT name, status, updated_at FROM services ORDER BY name
+      response_content_type: application/json
+      output_template: '{{toJSON .Data}}'
+
+  # Public: recent change log.
+  - path: /history
+    method: GET
+    type: storage-access
+    storage-access:
+      source: st
+      execute: |
+        SELECT id, service, status, reason, at FROM log
+        ORDER BY id DESC LIMIT 100
+      response_content_type: application/json
+      output_template: '{{toJSON .Data}}'
+
+  # Admin: register / update a service status.
+  # POST /admin/status {"name":"api","status":"degraded","reason":"high latency"}
+  - path: /admin/status
+    method: POST
+    type: storage-access
+    inputs:
+      - { name: name,   source: body, type: string, required: true, max: 64 }
+      - { name: status, source: body, type: string, required: true, max: 32 }
+      - { name: reason, source: body, type: string, default: "", max: 500 }
+    storage-access:
+      source: st
+      execute: |
+        INSERT INTO services(name, status, updated_at)
+        VALUES ({{name}}, {{status}}, datetime('now'))
+        ON CONFLICT(name) DO UPDATE SET
+          status = excluded.status,
+          updated_at = datetime('now');
+        INSERT INTO log(service, status, reason)
+        VALUES ({{name}}, {{status}}, {{reason}});
+        SELECT {{name}} AS name, {{status}} AS status
+      response_content_type: application/json
+      output_template: '{{toJSON .Data}}'
+
+  # Admin: notify all dashboards a change happened.
+  - path: /admin/notify
+    method: POST
+    type: stream-publish
+    stream-publish:
+      connection: status
+      route_id: status_changes
+      event_type: change

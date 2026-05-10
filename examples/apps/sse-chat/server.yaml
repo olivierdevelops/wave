@@ -1,0 +1,31 @@
+# Tiny live chat: POST /messages publishes to the `chat` SSE broker;
+# subscribers connect at /events/chat. A vanilla JS UI is served at /.
+#
+# Run:
+#   wave serve examples/apps/sse-chat/server.yaml --port 8203
+# Then open http://127.0.0.1:8203/
+
+default:
+  host: 127.0.0.1
+  port: 8203
+
+connections:
+  chat:
+    type: sse
+    subscribe_path: /events/chat
+    subscribe_cors_origins: ["*"]
+    keep_alive_interval: 15s
+
+routes:
+  - path: /
+    method: GET
+    type: file
+    file: { filepath: ./web/index.html }
+
+  - path: /messages
+    method: POST
+    type: stream-publish
+    stream-publish:
+      connection: chat
+      route_id: chat_messages
+      event_type: message

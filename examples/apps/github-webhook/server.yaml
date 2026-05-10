@@ -1,0 +1,35 @@
+# GitHub webhook receiver: HMAC-verifies the X-Hub-Signature-256 header
+# and republishes events on /events/github. Subscribe with curl to "tail"
+# incoming events; filter client-side on the X-GitHub-Event header echoed
+# in static_meta.
+#
+# Run:
+#   GITHUB_WEBHOOK_SECRET=ghsecret wave serve \
+#     examples/apps/github-webhook/server.yaml --port 8202
+
+default:
+  host: 127.0.0.1
+  port: 8202
+
+env:
+  GITHUB_WEBHOOK_SECRET: { description: "GitHub webhook secret" }
+
+connections:
+  github:
+    type: sse
+    subscribe_path: /events/github
+    subscribe_cors_origins: ["*"]
+
+routes:
+  - path: /webhooks/github
+    method: POST
+    type: stream-publish
+    webhook_sig:
+      provider: github
+      secret: "${ENV:GITHUB_WEBHOOK_SECRET}"
+    stream-publish:
+      connection: github
+      route_id: gh_events
+      event_type: github
+      static_meta:
+        source: github

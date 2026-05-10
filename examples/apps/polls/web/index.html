@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>polls</title>
+  <style>
+    body { font: 15px/1.45 system-ui, sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; }
+    h1 { margin: 0 0 .2rem; }
+    .meta { color:#888; font-size:.9em; margin-bottom: 1.2rem; }
+    form { display: grid; gap: .5rem; }
+    input, button { font: inherit; padding: .4rem .6rem; border: 1px solid #ccc; border-radius: 4px; }
+    button { background: #222; color: #fff; cursor: pointer; border: 0; }
+    .opt { display: grid; grid-template-columns: 1fr auto; gap: .5rem; align-items: center; margin: .3rem 0; }
+    .bar { height: 22px; background: #efefef; border-radius: 3px; position: relative; overflow: hidden; }
+    .fill { background: #4a90e2; height: 100%; transition: width .3s ease; }
+    .label { position: absolute; left: .5rem; top: 2px; font-size: .9em; }
+    .ct { color: #666; font-size: .9em; min-width: 2em; text-align: right; }
+    .row { display: flex; gap: .4rem; margin: .25rem 0; }
+    .row input { flex: 1; }
+  </style>
+</head>
+<body>
+  <h1>polls</h1>
+  <div class="meta">Live results via Server-Sent Events.</div>
+
+  <div id="create">
+    <h3>create</h3>
+    <form id="cf">
+      <input name="title" placeholder="Poll title" required>
+      <div id="opts">
+        <div class="row"><input placeholder="option 1"></div>
+        <div class="row"><input placeholder="option 2"></div>
+      </div>
+      <button type="button" id="add">+ option</button>
+      <button type="submit">create poll</button>
+    </form>
+  </div>
+
+  <hr>
+  <div id="view"></div>
+
+  <script>
+    let activePoll = null;
+    let sse = null;
+
+    document.getElementById('add').onclick = () => {
+      const wrap = document.getElementById('opts');
+      const div = document.createElement('div');
+      div.className = 'row';
+      div.innerHTML = '<input placeholder="option ' + (wrap.children.length + 1) + '">';
+      wrap.appendChild(div);
+    };
+
+    document.getElementById('cf').onsubmit = async (e) => {
+      e.preventDefault();
+      const title = e.target.title.value.trim();
+      const options = [...document.querySelectorAll('#opts input')]
+        .map(i => i.value.trim()).filter(Boolean);
+      if (options.length < 2) return alert('need at least 2 options');
+      const r = await fetch('/polls', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ title }),
+      });
+      const { id } = await r.json();
+      for (const label of options) {
+        await fetch('/polls/' + id + '/options', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ label }),
+        });
+      }
+      openPoll(id);
+    };
+
+    async function openPoll(id) {
+      activePoll = id;
+      await refresh();
+      if (sse) sse.close();
+      sse = new EventSource('/events/polls');
+      sse.addEventListener('vote', (ev) => {
+        try {
+          const data = JSON.parse(ev.data);
+          if (data.poll_id == activePoll) refresh();
+        } catch {}
+      });
+    }
+
+    async function refresh() {
+      const r = await fetch('/polls/' + activePoll);
+      const data = await r.json();
+      const row = Array.isArray(data) ? data[0] : data;
+      if (!row) return;
+      const opts = JSON.parse(row.options_json || '[]');
+      const total = opts.reduce((s, o) => s + (o.votes || 0), 0) || 1;
+      const v = document.getElementById('view');
+      v.innerHTML = '<h3></h3><div id="bars"></div>';
+      v.querySelector('h3').textContent = row.title;
+      const bars = v.querySelector('#bars');
+      for (const o of opts) {
+        const pct = Math.round((o.votes / total) * 100);
+        const el = document.createElement('div');
+        el.className = 'opt';
+        el.innerHTML =
+          '<div class="bar"><div class="fill" style="width:' + pct + '%"></div>' +
+          '<span class="label"></span></div>' +
+          '<div><span class="ct"></span> <button>vote</button></div>';
+        el.querySelector('.label').textContent = o.label;
+        el.querySelector('.ct').textContent = o.votes;
+        el.querySelector('button').onclick = async () => {
+          await fetch('/polls/' + activePoll + '/vote', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ option_id: o.id }),
+          });
+          await fetch('/polls/' + activePoll + '/notify', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ poll_id: activePoll }),
+          });
+        };
+        bars.appendChild(el);
+      }
+    }
+  </script>
+</body>
+</html>

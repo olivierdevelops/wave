@@ -1,0 +1,79 @@
+# magic-link-plus-totp — two-factor sign-in.
+#
+# Step 1: magic-link establishes a session (claim "trusted" missing).
+# Step 2: POST /totp/verify with a code from the user's authenticator
+#         upgrades the session to include the "trusted" claim.
+# Routes that require RequireClaims: { trusted: "yes" } reject sessions
+# that haven't completed step 2.
+#
+# Run:
+#   wave serve examples/apps/magic-link-plus-totp/server.yaml --port 8601
+
+default:
+  host: 127.0.0.1
+  port: 8601
+
+auth:
+  session:
+    type: jwt
+    token_location: cookie
+    cookie_name: wave_session
+    secret: dev-secret-change-me
+    token_duration_seconds: 86400
+
+routes:
+  - path: /auth/login/request
+    method: POST
+    type: magic-link-request
+    magic-link-request:
+      callback_url: http://127.0.0.1:8601/auth/login/consume
+      from_email: noreply@example.com
+      subject: "Your sign-in link"
+      ttl_seconds: 600
+      email_body: |
+        Sign in: {{.Link}}
+
+  - path: /auth/login/consume
+    method: GET
+    type: magic-link-consume
+    magic-link-consume:
+      success_redirect: /me
+
+  - path: /totp/enroll
+    method: POST
+    type: totp-enroll-start
+    auth: ["session"]
+    totp-enroll-start: { issuer: "wave-demo" }
+
+  - path: /totp/confirm
+    method: POST
+    type: totp-enroll-confirm
+    auth: ["session"]
+    totp-enroll-confirm: {}
+
+  # On success, this route is responsible for upgrading the session to
+  # include `trusted=yes`. The route handler reissues the JWT.
+  - path: /totp/verify
+    method: POST
+    type: totp-verify
+    auth: ["session"]
+    totp-verify: {}
+
+  - path: /me
+    method: GET
+    type: content
+    auth: ["session"]
+    content:
+      content_type: text/html
+      body: "<h1>Signed in (factor 1).</h1><p>POST /totp/verify to upgrade.</p>"
+
+  # Anything truly sensitive lives behind the trusted-session gate.
+  - path: /vault
+    method: GET
+    type: content
+    auth: ["session"]
+    require_claims:
+      trusted: "yes"
+    content:
+      content_type: text/html
+      body: "<h1>Trusted area — TOTP-verified session only.</h1>"

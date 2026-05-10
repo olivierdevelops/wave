@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>status</title>
+  <style>
+    body { font: 15px/1.45 system-ui, sans-serif; max-width: 720px; margin: 1.5rem auto; padding: 0 1rem; color: #222; }
+    h1 { margin: 0; }
+    .meta { color: #888; font-size: .9em; margin-bottom: 1rem; }
+    .svc { display: flex; justify-content: space-between; padding: .7rem .9rem; border: 1px solid #eee; border-radius: 6px; margin: .4rem 0; align-items: center; }
+    .pill { padding: .15rem .55rem; border-radius: 99px; font-size: .85em; font-weight: 600; color: #fff; }
+    .pill.operational { background: #2ecc71; }
+    .pill.degraded    { background: #f39c12; }
+    .pill.down        { background: #e74c3c; }
+    .pill.maintenance { background: #3498db; }
+    h3 { margin-top: 1.5rem; }
+    .log { font-size: .9em; color: #555; padding: .35rem 0; border-bottom: 1px solid #f1f1f1; }
+    .log .when { color: #999; font-size: .85em; }
+  </style>
+</head>
+<body>
+  <h1>system status</h1>
+  <div class="meta" id="overall">loading…</div>
+
+  <div id="services"></div>
+
+  <h3>recent changes</h3>
+  <div id="hist"></div>
+
+  <script>
+    async function loadStatus() {
+      const r = await fetch('/status');
+      const rows = (await r.json()) || [];
+      const wrap = document.getElementById('services');
+      wrap.innerHTML = '';
+      let bad = 0;
+      for (const s of rows) {
+        if (s.status !== 'operational') bad++;
+        const el = document.createElement('div');
+        el.className = 'svc';
+        el.innerHTML = '<div><strong></strong><div style="color:#888;font-size:.8em">updated </div></div>' +
+                       '<span class="pill"></span>';
+        el.querySelector('strong').textContent = s.name;
+        el.querySelector('div div').textContent += s.updated_at;
+        const p = el.querySelector('.pill');
+        p.textContent = s.status;
+        p.classList.add(s.status);
+        wrap.appendChild(el);
+      }
+      const overall = document.getElementById('overall');
+      if (rows.length === 0) overall.textContent = 'No services configured. POST to /admin/status to add one.';
+      else if (bad === 0) overall.textContent = '✅ All systems operational';
+      else overall.textContent = '⚠️ ' + bad + ' service(s) degraded';
+    }
+
+    async function loadHistory() {
+      const r = await fetch('/history');
+      const rows = (await r.json()) || [];
+      const h = document.getElementById('hist');
+      h.innerHTML = '';
+      for (const e of rows) {
+        const d = document.createElement('div');
+        d.className = 'log';
+        d.innerHTML = '<strong></strong> → <em></em> <span class="when"></span><div></div>';
+        d.querySelector('strong').textContent = e.service;
+        d.querySelector('em').textContent = e.status;
+        d.querySelector('.when').textContent = e.at;
+        d.querySelector('div').textContent = e.reason || '';
+        h.appendChild(d);
+      }
+    }
+
+    function refresh() { loadStatus(); loadHistory(); }
+    refresh();
+    const sse = new EventSource('/events/status');
+    sse.addEventListener('change', refresh);
+  </script>
+</body>
+</html>

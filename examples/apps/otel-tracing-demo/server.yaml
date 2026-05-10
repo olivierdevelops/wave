@@ -1,0 +1,63 @@
+# otel-tracing-demo — Wave fan-outing metrics & traces to an OTLP
+# collector via the `otel-exporter` exporter-kind plugin.
+#
+#   wave serve examples/apps/otel-tracing-demo/server.yaml --port 8704
+#
+# The /metrics endpoint (built-in Prometheus) is also live alongside.
+
+default:
+  host: 127.0.0.1
+  port: 8704
+
+plugins:
+  otel:
+    kind: exporter
+    transport: process
+    command: /tmp/wave-otel
+    env:
+      OTEL_EXPORTER_OTLP_ENDPOINT: "${ENV:OTEL_EXPORTER_OTLP_ENDPOINT}"
+      OTEL_SERVICE_NAME: wave-otel-tracing-demo
+
+observability:
+  exporters: [otel]
+
+storage:
+  cache:
+    type: sqlite
+    path: ./otel-demo.db
+    tables:
+      hits:
+        columns:
+          - id    INTEGER PRIMARY KEY AUTOINCREMENT
+          - label TEXT NOT NULL
+          - ts    TEXT NOT NULL DEFAULT (datetime('now'))
+
+routes:
+  # Generates a small bit of load: every hit becomes a metric sample +
+  # a span emitted through the request path's observability fanout.
+  - path: /hit
+    method: POST
+    type: storage-access
+    inputs:
+      - { name: label, source: query, type: string, default: "anon", max: 64 }
+    storage-access:
+      source: cache
+      execute: "INSERT INTO hits(label) VALUES ('{{.label}}')"
+      response_content_type: application/json
+      output_template: '{"id": {{.LastInsertID}}, "label": "{{.label}}"}'
+
+  - path: /hits
+    method: GET
+    type: storage-access
+    storage-access:
+      source: cache
+      execute: "SELECT id, label, ts FROM hits ORDER BY id DESC LIMIT 50"
+      response_content_type: application/json
+      output_template: "{{toJSON .Data}}"
+
+  - path: /slow
+    method: GET
+    type: content
+    content:
+      content_type: text/plain
+      body: "ok"

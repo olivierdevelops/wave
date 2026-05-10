@@ -1,0 +1,79 @@
+# notes-app — minimal CRUD over SQLite using `storage-access`.
+#
+#   wave serve examples/apps/notes-app/server.yaml --port 8101
+#
+# Tables are declared inline under storage.notes.tables so the schema is
+# applied at boot. `migrations/001_init.up.sql` is also shipped so you
+# can also run `wave migrate up --db ./data.db --dir ./migrations` if
+# you'd rather manage the schema as ordered files.
+
+default:
+  host: 127.0.0.1
+  port: 8101
+
+storage:
+  notes:
+    type: sqlite
+    path: ./data.db
+    tables:
+      notes:
+        columns:
+          - id INTEGER PRIMARY KEY AUTOINCREMENT
+          - title TEXT NOT NULL
+          - body TEXT NOT NULL DEFAULT ''
+          - created_at TEXT NOT NULL DEFAULT (datetime('now'))
+
+routes:
+  # Tiny browser UI.
+  - path: /app
+    method: GET
+    type: file
+    file:
+      filepath: ./web/index.html
+
+  # List every note, newest first.
+  - path: /notes
+    method: GET
+    type: storage-access
+    storage-access:
+      source: notes
+      execute: "SELECT id, title, body, created_at FROM notes ORDER BY id DESC"
+      response_content_type: application/json
+      output_template: "{{toJSON .Data}}"
+
+  # Read a single note by id (path param).
+  - path: /notes/{id}
+    method: GET
+    type: storage-access
+    inputs:
+      - { name: id, source: path, type: int, required: true }
+    storage-access:
+      source: notes
+      execute: "SELECT id, title, body, created_at FROM notes WHERE id = {{id}} LIMIT 1"
+      response_content_type: application/json
+      output_template: "{{toJSON .Data}}"
+
+  # Create. JSON body: { "title": "...", "body": "..." }
+  - path: /notes
+    method: POST
+    type: storage-access
+    inputs:
+      - { name: title, source: body, type: string, required: true, min: 1, max: 200 }
+      - { name: body,  source: body, type: string, default: "" }
+    storage-access:
+      source: notes
+      execute: "INSERT INTO notes(title, body) VALUES ({{title}}, {{body}})"
+      response_content_type: application/json
+      output_template: '{"id": {{.LastInsertID}}}'
+
+  # Hard delete by id.
+  - path: /notes/{id}
+    method: DELETE
+    type: storage-access
+    inputs:
+      - { name: id, source: path, type: int, required: true }
+    storage-access:
+      source: notes
+      execute: "DELETE FROM notes WHERE id = {{id}}"
+      response_content_type: application/json
+      output_template: '{"deleted": {{.RowsAffected}}}'

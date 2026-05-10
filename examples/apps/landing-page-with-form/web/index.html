@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Acme Wave — landing page</title>
+<link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+  <header class="hero">
+    <h1>Ship faster with <span>Acme Wave</span></h1>
+    <p class="tag">The declarative HTTP server that replaces your YAML-and-glue stack with… well, just YAML.</p>
+    <a href="#contact" class="cta">Get in touch</a>
+  </header>
+
+  <section class="features">
+    <article>
+      <h3>Declarative</h3>
+      <p>One YAML file describes every route. No code, no build step.</p>
+    </article>
+    <article>
+      <h3>Batteries included</h3>
+      <p>Storage, plugins, websockets, OAuth — all in the same binary.</p>
+    </article>
+    <article>
+      <h3>Production-ready</h3>
+      <p>Rate limits, circuit breakers, JWT auth, request validation.</p>
+    </article>
+  </section>
+
+  <section id="contact" class="contact">
+    <h2>Contact us</h2>
+    <p>Tell us about your project. We respond within one business day.</p>
+    <form id="contact-form">
+      <label>Name<input name="name" required maxlength="80"></label>
+      <label>Email<input name="email" type="email" required maxlength="200"></label>
+      <label>Message<textarea name="message" required maxlength="2000" rows="5"></textarea></label>
+      <button type="submit">Send</button>
+    </form>
+    <div id="result"></div>
+    <script>
+      // Wave's `inputs:` validator with `source: body` expects JSON.
+      // We POST a JSON body, then swap in the rendered thank-you HTML.
+      document.getElementById('contact-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const data = Object.fromEntries(new FormData(e.target).entries());
+        const res = await fetch('/contact', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+        });
+        document.body.innerHTML = await res.text();
+      });
+    </script>
+  </section>
+
+  <footer>
+    <p>Submissions land in <code>contacts.db</code>. View them at
+       <a href="/submissions">/submissions</a>.</p>
+  </footer>
+</body>
+</html>

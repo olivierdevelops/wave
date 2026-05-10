@@ -1,0 +1,29 @@
+# WebSocket echo: POST /echo is fanned out to all WS subscribers
+# connected at /ws/echo. Open / in a browser for the demo UI.
+#
+# Run:
+#   wave serve examples/apps/websocket-echo/server.yaml --port 8204
+
+default:
+  host: 127.0.0.1
+  port: 8204
+
+connections:
+  echo:
+    type: ws
+    subscribe_path: /ws/echo
+    subscribe_cors_origins: ["*"]
+
+routes:
+  - path: /
+    method: GET
+    type: file
+    file: { filepath: ./web/index.html }
+
+  - path: /echo
+    method: POST
+    type: stream-publish
+    stream-publish:
+      connection: echo
+      route_id: echo_msgs
+      event_type: echo

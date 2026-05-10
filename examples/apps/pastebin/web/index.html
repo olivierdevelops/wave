@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>pastebin</title>
+  <style>
+    body { font: 15px/1.4 system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; }
+    h1 { margin-bottom: .2rem; }
+    .meta { color: #888; font-size: .9em; margin-bottom: 1.2rem; }
+    form { display: grid; gap: .6rem; }
+    textarea { width: 100%; min-height: 280px; font: 13px/1.4 ui-monospace, Menlo, monospace; padding: .6rem; border: 1px solid #ccc; border-radius: 4px; }
+    .row { display: flex; gap: .5rem; flex-wrap: wrap; }
+    .row > * { flex: 1 1 0; padding: .4rem .6rem; font: inherit; border: 1px solid #ccc; border-radius: 4px; }
+    button { background: #222; color: #fff; border: 0; padding: .6rem 1.2rem; cursor: pointer; border-radius: 4px; font: inherit; }
+    .out { background: #f6f6f6; padding: .8rem; margin-top: 1rem; border-radius: 4px; word-break: break-all; }
+  </style>
+</head>
+<body>
+  <h1>pastebin</h1>
+  <div class="meta">Anonymous code-paste service. POST text → get a short URL.</div>
+
+  <form id="f">
+    <textarea name="content" placeholder="Paste your code or text here…" required></textarea>
+    <div class="row">
+      <select name="language">
+        <option>plaintext</option>
+        <option>javascript</option>
+        <option>python</option>
+        <option>go</option>
+        <option>bash</option>
+      </select>
+      <input name="expires_at" type="text" placeholder="expires_at (e.g. 2030-01-01 12:00:00)" />
+      <input name="view_limit" type="number" placeholder="view_limit (0 = unlimited)" min="0" />
+    </div>
+    <button type="submit">paste</button>
+  </form>
+  <div id="out" class="out" hidden></div>
+
+  <script>
+    document.getElementById('f').onsubmit = async (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const body = {
+        content:    fd.get('content'),
+        language:   fd.get('language'),
+        expires_at: fd.get('expires_at') || '',
+        view_limit: parseInt(fd.get('view_limit') || '0', 10),
+      };
+      const r = await fetch('/pastes', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const { id } = await r.json();
+      const r2 = await fetch('/pastes/' + id + '/slug');
+      const sj = await r2.json();
+      const slug = sj.slug || (Array.isArray(sj) ? sj[0]?.slug : null);
+      const out = document.getElementById('out');
+      out.hidden = false;
+      out.innerHTML = 'Paste created. View at <a href="/p/' + slug + '">/p/' + slug + '</a>';
+    };
+  </script>
+</body>
+</html>

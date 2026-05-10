@@ -1,0 +1,78 @@
+# file-uploads — multipart upload to a filesystem-backed storage,
+# with a sqlite "uploads" table tracking per-file metadata.
+#
+#   wave serve examples/apps/file-uploads/server.yaml --port 8106
+
+default:
+  host: 127.0.0.1
+  port: 8106
+
+storage:
+  blobs:
+    type: filesystem
+    path: ./data/uploads
+
+  meta:
+    type: sqlite
+    path: ./data/meta.db
+    tables:
+      uploads:
+        columns:
+          - id INTEGER PRIMARY KEY AUTOINCREMENT
+          - filename TEXT NOT NULL
+          - size     INTEGER NOT NULL
+          - content_type TEXT
+          - created_at TEXT NOT NULL DEFAULT (datetime('now'))
+
+routes:
+  # Upload step 1 — write the bytes to disk under data/uploads/<name>.
+  # The filesystem storage backend exposes WRITE / READ / DELETE etc.
+  # as template functions (see infra/filesystem/filesystem.go).
+  - path: /upload-blob
+    method: POST
+    type: storage-access
+    storage-access:
+      source: blobs
+      execute: '{{ WRITE (GET_FILE "file") (GET_FILE "file").Filename }}'
+      response_content_type: application/json
+      output_template: '{"ok": true}'
+
+  # Upload step 2 — record the metadata. Two-step keeps each route
+  # focused on one storage backend; a wrapper script (or a plugin) can
+  # call both atomically.
+  - path: /upload-meta
+    method: POST
+    type: storage-access
+    inputs:
+      - { name: filename,     source: body, type: string, required: true }
+      - { name: size,         source: body, type: int,    required: true }
+      - { name: content_type, source: body, type: string, default: "application/octet-stream" }
+    storage-access:
+      source: meta
+      execute: |
+        INSERT INTO uploads(filename, size, content_type)
+        VALUES ({{filename}}, {{size}}, {{content_type}})
+      response_content_type: application/json
+      output_template: '{"id": {{.LastInsertID}}}'
+
+  - path: /files
+    method: GET
+    type: storage-access
+    storage-access:
+      source: meta
+      execute: "SELECT id, filename, size, content_type, created_at FROM uploads ORDER BY id DESC"
+      response_content_type: application/json
+      output_template: "{{toJSON .Data}}"
+
+  # Stream a stored file back. The `$filetype` content type is a
+  # special marker honoured by storage_access (see usecases/storage_access)
+  # that copies bytes through with the right Content-Disposition header.
+  - path: /files/by-name/{name}
+    method: GET
+    type: storage-access
+    inputs:
+      - { name: name, source: path, type: string, required: true }
+    storage-access:
+      source: blobs
+      execute: '{{ READ (GET_VALUE "name") "file" }}'
+      response_content_type: $filetype

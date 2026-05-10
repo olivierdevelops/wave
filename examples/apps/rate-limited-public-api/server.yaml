@@ -1,0 +1,56 @@
+# rate-limited-public-api — composed limits.
+#
+# `/api/cheap` uses a per-user bucket (key_claim: sub).
+# `/api/anon` uses a stricter global bucket — anonymous traffic shares
+# one budget. Both demonstrate the named-limit registry.
+#
+# Run:
+#   wave serve examples/apps/rate-limited-public-api/server.yaml --port 8604
+
+default:
+  host: 127.0.0.1
+  port: 8604
+
+auth:
+  session:
+    type: jwt
+    token_location: header
+    cookie_name: wave_session
+    secret: dev-secret-change-me
+    token_duration_seconds: 86400
+
+limits:
+  per_user_50rps:
+    case: rate_limited
+    rps: 50
+    burst: 100
+    key_claim: sub          # one bucket per authenticated user
+    on_fail:
+      status: 429
+      headers: { Retry-After: "1" }
+
+  global_5rps:
+    case: rate_limited
+    rps: 5
+    burst: 5                # shared across all callers
+    on_fail:
+      status: 429
+      headers: { Retry-After: "5" }
+
+routes:
+  - path: /api/cheap
+    method: GET
+    type: content
+    auth: ["session"]
+    limits: [per_user_50rps]
+    content:
+      content_type: application/json
+      body: '{"ok": true, "scope": "per-user"}'
+
+  - path: /api/anon
+    method: GET
+    type: content
+    limits: [global_5rps]
+    content:
+      content_type: application/json
+      body: '{"ok": true, "scope": "anonymous"}'

@@ -1,0 +1,59 @@
+# vault-secrets-fed — Wave config where sensitive values are fed from
+# Vault via the `vault-secrets` plugin. Demonstrates the ${PLUGIN:...}
+# substitution: any string field in the parsed config can resolve from
+# a secrets-kind plugin after boot.
+#
+#   wave serve examples/apps/vault-secrets-fed/server.yaml --port 8702
+
+default:
+  host: 127.0.0.1
+  port: 8702
+
+plugins:
+  vault:
+    kind: secrets
+    transport: process
+    command: /tmp/wave-vault
+    env:
+      VAULT_ADDR:  "${ENV:VAULT_ADDR}"
+      VAULT_TOKEN: "${ENV:VAULT_TOKEN}"
+      VAULT_CACHE_TTL: "30s"
+
+# JWT signing secret never appears in the YAML — it comes from Vault
+# at boot via the secrets-kind plugin.
+auth:
+  session:
+    type: jwt
+    token_location: cookie
+    cookie_name: wave_session
+    secret: "${PLUGIN:vault:secret/data/wave#jwt_secret}"
+    token_duration_seconds: 86400
+    redirect_on_failure: /login
+    redirect_on_success: /me
+    default_logins:
+      - { username: admin, password: admin }
+
+# A stream subscriber whose bearer token is also vault-resolved.
+connections:
+  events:
+    type: sse
+    subscribe_path: /events
+    subscribe_auth_token: "${PLUGIN:vault:secret/data/wave#stream_token}"
+    keep_alive_interval: 15s
+
+routes:
+  - path: /me
+    method: GET
+    type: content
+    auth: ["session"]
+    content:
+      content_type: text/plain
+      body: "signed in. JWT secret was loaded from Vault."
+
+  - path: /publish
+    method: POST
+    type: stream-publish
+    stream-publish:
+      connection: events
+      route_id: vault_demo
+      event_type: message

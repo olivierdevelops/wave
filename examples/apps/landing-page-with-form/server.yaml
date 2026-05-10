@@ -1,0 +1,73 @@
+# landing-page-with-form — marketing page + SQLite-backed contact form.
+#
+# GET /              → static landing page with a "Contact us" form
+# POST /contact      → storage-access route inserts into SQLite, returns
+#                       a thank-you HTML page rendered from a template
+# GET  /submissions  → small JSON listing of received messages
+#                       (so you can verify storage is working)
+#
+#   wave serve examples/apps/landing-page-with-form/server.yaml --port 8405
+# Then open http://127.0.0.1:8405/
+
+default:
+  host: 127.0.0.1
+  port: 8405
+
+storage:
+  contacts:
+    type: sqlite
+    path: ./contacts.db
+    tables:
+      submissions:
+        columns:
+          - id INTEGER PRIMARY KEY AUTOINCREMENT
+          - name TEXT NOT NULL
+          - email TEXT NOT NULL
+          - message TEXT NOT NULL
+          - created_at TEXT NOT NULL DEFAULT (datetime('now'))
+
+routes:
+  - path: /
+    type: file
+    file:
+      filepath: ./web/index.html
+
+  - path: /assets/
+    method: GET
+    type: static
+    static:
+      dir: ./assets
+
+  # Form POST. Inputs are validated, then inserted into SQLite. We
+  # render a tiny thank-you HTML page from the result row so the user
+  # sees confirmation right in the browser.
+  - path: /contact
+    method: POST
+    type: storage-access
+    inputs:
+      - { name: name,    source: body, type: string, required: true, min: 1, max: 80 }
+      - { name: email,   source: body, type: string, required: true, min: 3, max: 200 }
+      - { name: message, source: body, type: string, required: true, min: 1, max: 2000 }
+    storage-access:
+      source: contacts
+      execute: "INSERT INTO submissions(name, email, message) VALUES ({{name}}, {{email}}, {{message}})"
+      response_content_type: text/html
+      output_template: |
+        <!doctype html>
+        <html><head><meta charset="utf-8"><title>Thanks!</title>
+        <link rel="stylesheet" href="/assets/style.css"></head>
+        <body><main class="thanks">
+        <h1>Thanks for reaching out!</h1>
+        <p>We received your message (id <code>{{.LastInsertID}}</code>) and will get back to you soon.</p>
+        <p><a href="/">← back to the landing page</a></p>
+        </main></body></html>
+
+  # Lightweight admin endpoint — see what the form has captured.
+  - path: /submissions
+    method: GET
+    type: storage-access
+    storage-access:
+      source: contacts
+      execute: "SELECT id, name, email, message, created_at FROM submissions ORDER BY id DESC"
+      response_content_type: application/json
+      output_template: "{{toJSON .Data}}"

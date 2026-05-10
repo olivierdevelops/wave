@@ -1,0 +1,62 @@
+# Sign in with Google via OAuth 2.
+#
+# Two routes drive the flow:
+#   GET /auth/google         → 302 to Google's consent screen
+#   GET /auth/google/callback → exchange code → session cookie
+
+default:
+  host: localhost
+  port: 8003
+
+env:
+  GOOGLE_CLIENT_ID:     { description: "Google OAuth client ID" }
+  GOOGLE_CLIENT_SECRET: { description: "Google OAuth client secret" }
+
+auth:
+  google:
+    type: oauth
+    token_location: cookie
+    cookie_name: wave_session
+    secret: dev-secret-change-me
+    token_duration_seconds: 86400
+    oauth:
+      provider: google_oauth
+      client_id:     "${ENV:GOOGLE_CLIENT_ID}"
+      client_secret: "${ENV:GOOGLE_CLIENT_SECRET}"
+      scopes: [openid, email, profile]
+
+routes:
+  - path: /login
+    method: GET
+    type: content
+    content:
+      content_type: text/html
+      body: |
+        <!doctype html>
+        <title>oauth-google demo</title>
+        <h1>Sign in with Google</h1>
+        <p><a href="/auth/google">Continue with Google →</a></p>
+
+  - path: /auth/google
+    method: GET
+    type: oauth-start
+    oauth-start:
+      auth_config: google
+      redirect_uri: http://localhost:8003/auth/google/callback
+
+  - path: /auth/google/callback
+    method: GET
+    type: oauth-callback
+    oauth-callback:
+      auth_config:     google
+      redirect_uri:    http://localhost:8003/auth/google/callback
+      success_redirect: /me
+      failure_redirect: /login
+
+  - path: /me
+    method: GET
+    type: content
+    auth: ["google"]
+    content:
+      content_type: text/html
+      body: "<h1>Signed in via Google.</h1>"

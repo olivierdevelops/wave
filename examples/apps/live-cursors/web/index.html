@@ -1,0 +1,52 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Wave Live Cursors</title>
+  <style>
+    html, body { margin: 0; padding: 0; height: 100%; font: 13px system-ui, sans-serif; background: #fafafa; }
+    canvas { display: block; width: 100vw; height: 100vh; cursor: crosshair; }
+    #me { position: fixed; top: 8px; left: 8px; background: #fff; padding: 4px 8px; border: 1px solid #ddd; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <div id="me">you: <span id="u"></span></div>
+  <canvas id="c"></canvas>
+  <script>
+    const me = 'u' + Math.random().toString(36).slice(2, 7);
+    document.getElementById('u').textContent = me;
+    const c = document.getElementById('c'), ctx = c.getContext('2d');
+    const fit = () => { c.width = innerWidth * devicePixelRatio; c.height = innerHeight * devicePixelRatio; ctx.scale(devicePixelRatio, devicePixelRatio); };
+    fit(); addEventListener('resize', fit);
+    const others = new Map(); // user -> {x, y, t, color}
+    const colorFor = u => '#' + (parseInt(u.slice(1), 36) % 0xffffff).toString(16).padStart(6,'0');
+    const draw = () => {
+      ctx.clearRect(0, 0, c.width, c.height);
+      const now = Date.now();
+      for (const [u, p] of others) {
+        if (now - p.t > 5000) { others.delete(u); continue; }
+        ctx.fillStyle = p.color;
+        ctx.beginPath(); ctx.arc(p.x, p.y, 6, 0, Math.PI*2); ctx.fill();
+        ctx.fillText(u, p.x + 8, p.y - 8);
+      }
+      requestAnimationFrame(draw);
+    };
+    draw();
+    const es = new EventSource('/events/cursors');
+    es.addEventListener('cursor', e => {
+      try {
+        const d = JSON.parse(e.data);
+        if (!d || d.user === me) return;
+        others.set(d.user, { x: d.x, y: d.y, t: Date.now(), color: colorFor(d.user) });
+      } catch {}
+    });
+    let last = 0;
+    addEventListener('mousemove', e => {
+      const now = Date.now();
+      if (now - last < 30) return; last = now;
+      fetch('/cursor', { method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ user: me, x: e.clientX, y: e.clientY }) });
+    });
+  </script>
+</body>
+</html>

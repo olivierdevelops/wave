@@ -1,0 +1,7 @@
+[
+  { "id": 1, "name": "Wave T-shirt",     "price": 22.00 },
+  { "id": 2, "name": "Wave Hoodie",      "price": 48.50 },
+  { "id": 3, "name": "Wave Mug",         "price":  9.99 },
+  { "id": 4, "name": "Wave Sticker Pack","price":  4.50 },
+  { "id": 5, "name": "Wave Cap",         "price": 18.00 }
+]

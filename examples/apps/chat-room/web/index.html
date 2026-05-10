@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>chat-room</title>
+  <style>
+    body { font: 14px/1.45 system-ui, sans-serif; max-width: 640px; margin: 0 auto; padding: 1rem; height: 100vh; box-sizing: border-box; display: flex; flex-direction: column; }
+    h1 { margin: 0 0 .3rem; font-size: 1.2em; }
+    .meta { color: #888; font-size: .85em; margin-bottom: .6rem; }
+    #log { flex: 1; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px; padding: .6rem; background: #fafafa; }
+    .m { padding: .15rem 0; }
+    .m .n { font-weight: 600; color: #1976d2; }
+    .m .t { color: #aaa; font-size: .8em; margin-left: .3rem; }
+    form { display: flex; gap: .4rem; margin-top: .5rem; }
+    input { font: inherit; padding: .4rem .6rem; border: 1px solid #ccc; border-radius: 4px; }
+    #body { flex: 1; }
+    button { background: #1976d2; color: #fff; border: 0; padding: .4rem .9rem; border-radius: 4px; cursor: pointer; font: inherit; }
+  </style>
+</head>
+<body>
+  <h1>chat-room</h1>
+  <div class="meta">global anonymous chat · SSE live updates</div>
+  <div id="log"></div>
+  <form id="f">
+    <input id="nick" placeholder="nick" maxlength="32" style="max-width:120px">
+    <input id="body" placeholder="say something…" maxlength="500" required>
+    <button>send</button>
+  </form>
+
+  <script>
+    const log = document.getElementById('log');
+    const nick = document.getElementById('nick');
+    nick.value = localStorage.nick || ('anon' + Math.floor(Math.random() * 9000 + 1000));
+    nick.onchange = () => { localStorage.nick = nick.value.trim() || 'anon'; };
+
+    function append(m) {
+      const d = document.createElement('div');
+      d.className = 'm';
+      d.innerHTML = '<span class="n"></span>: <span class="b"></span><span class="t"></span>';
+      d.querySelector('.n').textContent = m.nick;
+      d.querySelector('.b').textContent = m.body;
+      d.querySelector('.t').textContent = m.created_at ? ' (' + m.created_at + ')' : '';
+      log.appendChild(d);
+      log.scrollTop = log.scrollHeight;
+    }
+
+    async function backfill() {
+      const r = await fetch('/history');
+      const rows = (await r.json()) || [];
+      for (const m of rows.reverse()) append(m);
+    }
+
+    document.getElementById('f').onsubmit = async (e) => {
+      e.preventDefault();
+      const n = nick.value.trim() || 'anon';
+      const b = document.getElementById('body').value.trim();
+      if (!b) return;
+      const payload = { nick: n, body: b };
+      await fetch('/messages', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      await fetch('/broadcast', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      document.getElementById('body').value = '';
+    };
+
+    backfill();
+    const sse = new EventSource('/events/room');
+    sse.addEventListener('msg', (ev) => {
+      try { append(JSON.parse(ev.data)); } catch {}
+    });
+  </script>
+</body>
+</html>

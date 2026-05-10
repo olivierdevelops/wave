@@ -1,0 +1,81 @@
+# saml-enterprise-sso — Enterprise SSO via the `saml-auth` plugin.
+#
+#   wave serve examples/apps/saml-enterprise-sso/server.yaml --port 8703
+#
+# /login/saml         → kicks off SAMLRequest, redirects to the IdP
+# /login/saml/callback → IdP POSTs SAMLResponse here; plugin validates
+#                        and returns Claims; orchestrator mints a session
+# /dashboard          → protected by the `corp_sso` auth (Claims.Roles)
+
+default:
+  host: 127.0.0.1
+  port: 8703
+
+plugins:
+  saml_corp:
+    kind: auth
+    transport: process
+    command: /tmp/wave-saml
+    env:
+      SAML_IDP_METADATA_URL: "${ENV:SAML_IDP_METADATA_URL}"
+      SAML_SP_ENTITY_ID:     "http://127.0.0.1:8703/saml"
+      SAML_SP_ACS_URL:       "http://127.0.0.1:8703/login/saml/callback"
+      SAML_SP_CERT_PATH:     "${ENV:SAML_SP_CERT_PATH}"
+      SAML_SP_KEY_PATH:      "${ENV:SAML_SP_KEY_PATH}"
+
+auth:
+  corp_sso:
+    type: plugin
+    plugin: saml_corp
+    token_location: cookie
+    cookie_name: corp_session
+    redirect_on_success: /dashboard
+    redirect_on_failure: /login
+
+routes:
+  - path: /login
+    method: GET
+    type: content
+    content:
+      content_type: text/html
+      body: |
+        <!doctype html><h1>SSO demo</h1>
+        <p><a href="/login/saml">Sign in with corporate SSO</a></p>
+
+  # Kick off SAMLRequest. X-Auth-Method header tells the plugin bridge
+  # to call the saml_init method instead of the default `password`.
+  - path: /login/saml
+    method: GET
+    type: auth-login
+    headers:
+      X-Auth-Method: saml_init
+    auth-login:
+      for: corp_sso
+      redirect_on_success: /dashboard
+      redirect_on_failure: /login
+
+  # ACS — the IdP POSTs the SAMLResponse form here.
+  - path: /login/saml/callback
+    method: POST
+    type: auth-login
+    headers:
+      X-Auth-Method: saml_callback
+    auth-login:
+      for: corp_sso
+      redirect_on_success: /dashboard
+      redirect_on_failure: /login
+
+  - path: /auth/logout
+    method: POST
+    type: auth-logout
+    auth-logout:
+      for: corp_sso
+      redirect_on_success: /login
+
+  - path: /dashboard
+    method: GET
+    type: content
+    auth: ["corp_sso"]
+    content:
+      content_type: text/html
+      body: "<h1>Welcome</h1><p>Authenticated via corporate SAML IdP.</p>"
