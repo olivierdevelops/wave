@@ -51,8 +51,14 @@ routes:
       content_type: text/html
       body: |
         <!doctype html><title>progress</title>
-        <pre id=o></pre>
+        <pre id=o>(waiting — POST to /process to see events)</pre>
         <script>
         const es = new EventSource('/events/progress');
-        es.onmessage = e => o.textContent += e.data + '\n';
+        // The server emits frames with `event: progress` (matches the
+        // stream-publish event_type), so listen for that named event,
+        // not the default `message` event.
+        es.addEventListener('progress', e => {
+          o.textContent += e.data + '\n';
+        });
+        es.onerror = () => o.textContent += '[disconnected]\n';
         </script>

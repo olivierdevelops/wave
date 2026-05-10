@@ -93,3 +93,48 @@ func TestGzipFlushOptsOut(t *testing.T) {
 		t.Error("Flush before write should opt out of gzip")
 	}
 }
+
+// Regression: a streaming handler (SSE-like) that writes, flushes, then
+// writes again must not trigger spurious WriteHeader calls. Before the
+// fix, gzipWriter.Write called commitPassthrough on every write after
+// the first Flush, producing "superfluous response.WriteHeader call"
+// warnings every heartbeat tick (15s in production).
+func TestGzipStreamingNoSpuriousWriteHeader(t *testing.T) {
+	rec := &writeHeaderCounter{ResponseWriter: httptest.NewRecorder()}
+
+	h := GzipMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		// Initial connect frame + flush (mirrors infra/connections/sse.go)
+		_, _ = w.Write([]byte(": connected\n\n"))
+		w.(http.Flusher).Flush()
+		// Several heartbeats — each one writes then flushes.
+		for i := 0; i < 5; i++ {
+			_, _ = w.Write([]byte(": ping\n\n"))
+			w.(http.Flusher).Flush()
+		}
+	}))
+	r := httptest.NewRequest("GET", "/", nil)
+	r.Header.Set("Accept-Encoding", "gzip")
+	h.ServeHTTP(rec, r)
+
+	if rec.headerCalls != 1 {
+		t.Errorf("want exactly 1 WriteHeader call, got %d", rec.headerCalls)
+	}
+}
+
+// writeHeaderCounter wraps a ResponseWriter and counts WriteHeader calls.
+type writeHeaderCounter struct {
+	http.ResponseWriter
+	headerCalls int
+}
+
+func (w *writeHeaderCounter) WriteHeader(code int) {
+	w.headerCalls++
+	w.ResponseWriter.WriteHeader(code)
+}
+
+func (w *writeHeaderCounter) Flush() {
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}

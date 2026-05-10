@@ -75,7 +75,10 @@ func (g *gzipWriter) Write(p []byte) (int, error) {
 	// Streaming opt-out: a handler that calls Flush wants bytes on the
 	// wire immediately, which gzip buffering breaks. We respect that by
 	// going passthrough if Flush was called before our first write.
-	if g.flushed && g.gz == nil {
+	// Guard on !passthrough so we only commit once — otherwise every
+	// subsequent Write after the first Flush calls WriteHeader again,
+	// producing the "superfluous response.WriteHeader call" warning.
+	if g.flushed && g.gz == nil && !g.passthrough {
 		g.commitPassthrough()
 	}
 	if g.passthrough {
