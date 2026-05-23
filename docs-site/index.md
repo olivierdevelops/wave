@@ -31,7 +31,10 @@ features:
     details: Out-of-process plugins for storage, secrets, auth, observability. Plugins speak a tiny JSON contract — write them in any language.
   - icon: 🤖
     title: AI-agent friendly
-    details: YAML is something LLMs write reliably. Ships with JSON schema, llms.txt, and a Claude Code skill so AI assistants produce working configs.
+    details: '5-10× fewer tokens per feature than Express / FastAPI / Gin. Ships with JSON schema, llms.txt, and a Claude Code skill. Cursor / Copilot / Claude produce working configs first try.'
+  - icon: 🧩
+    title: Fits your existing stack
+    details: 'BFF for React/Next, gateway in front of Node, sidekick to a Python ML service. Not a replacement — a complement.'
   - icon: ⚡
     title: Production-ready
     details: Prometheus metrics, OpenTelemetry traces, audit log, outbox CLI, /healthz + /readyz, migrations, secrets, RBAC. The boring infrastructure handled.

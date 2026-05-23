@@ -44,6 +44,7 @@ export default defineConfig({
             { text: 'Quickstart', link: '/guide/quickstart' },
             { text: 'Install', link: '/guide/install' },
             { text: 'Tutorial: build a todo API', link: '/guide/tutorial' },
+            { text: 'Wave in your stack', link: '/guide/wave-in-your-stack' },
           ],
         },
         {
@@ -117,6 +118,15 @@ export default defineConfig({
             { text: 'Outbox-backed delivery', link: '/cookbook/outbox' },
           ],
         },
+        {
+          text: 'Use Wave with your existing stack',
+          items: [
+            { text: 'React / Next.js + Wave backend', link: '/cookbook/react-wave' },
+            { text: 'Wave in front of a Node service', link: '/cookbook/node-gateway' },
+            { text: 'Wave as a Python sidekick', link: '/cookbook/python-sidekick' },
+            { text: 'Migrating from Express incrementally', link: '/cookbook/migrate-from-express' },
+          ],
+        },
       ],
 
       '/reference/': [
@@ -133,6 +143,7 @@ export default defineConfig({
           text: 'AI agents',
           items: [
             { text: 'Overview', link: '/ai/' },
+            { text: 'Token efficiency', link: '/ai/token-efficiency' },
             { text: 'Claude Code skill', link: '/ai/claude-code' },
             { text: 'Cursor + editors', link: '/ai/editors' },
             { text: 'Prompt patterns', link: '/ai/prompts' },

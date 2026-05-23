@@ -93,6 +93,25 @@ and 404 handling. No Go code required.
 - **AI-agent friendly.** YAML is something LLMs can write reliably.
   We ship JSON schemas, an `llms.txt` index, and a Claude Code skill
   so AI assistants can produce working Wave configs out of the box.
+- **5-10× fewer tokens** to build a feature with Cursor / Copilot /
+  Claude than equivalent Express / FastAPI / Gin code — see the
+  [token efficiency comparison](https://luowensheng.github.io/wave/ai/token-efficiency).
+
+## Use it with your existing stack
+
+Wave isn't a replacement for React, Node, or Python — it slots
+alongside them. Common patterns:
+
+- [**React / Next.js + Wave backend**](https://luowensheng.github.io/wave/cookbook/react-wave) —
+  Wave handles auth + persistence; your frontend stays on Vercel
+- [**Wave in front of a Node / Express service**](https://luowensheng.github.io/wave/cookbook/node-gateway) —
+  add auth / rate-limit / webhook signature verification without
+  changing the Node code
+- [**Wave + Python ML service**](https://luowensheng.github.io/wave/cookbook/python-sidekick) —
+  wrap a FastAPI / model server with auth, rate-limit, SSE, and
+  202-task patterns
+- [**Migrating from Express incrementally**](https://luowensheng.github.io/wave/cookbook/migrate-from-express) —
+  route-at-a-time, no big-bang
 
 ## Install
 

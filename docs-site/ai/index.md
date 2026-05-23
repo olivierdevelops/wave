@@ -5,6 +5,14 @@ is YAML (LLMs produce reliable YAML), its conventions are documented
 in one place (CLAUDE.md), and we ship an `llms.txt` so models can
 discover the rules quickly.
 
+::: tip TL;DR for agent users
+You write 5-10× fewer tokens per feature in Wave than in
+Express/FastAPI/Gin. That means more iterations per Cursor request,
+more features per Claude context window, and dramatically less
+generated code to review. See [**Token efficiency**](/ai/token-efficiency)
+for the concrete comparisons.
+:::
+
 ## What ships in the box
 
 - **`llms.txt`** at the repo root — [llmstxt.org](https://llmstxt.org/)-format
@@ -21,6 +29,7 @@ discover the rules quickly.
 
 ## How to use Wave with…
 
+- [**Token efficiency**](/ai/token-efficiency) — why agent-assisted dev is 5-10× cheaper with Wave
 - [**Claude Code**](/ai/claude-code) — install the skill, see prompt patterns
 - [**Cursor / Copilot / Continue**](/ai/editors) — schema association + workspace pinning
 - [**Prompt patterns**](/ai/prompts) — patterns that produce reliable output

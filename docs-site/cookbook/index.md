@@ -34,6 +34,13 @@ Most have a matching runnable demo in
 - [**Forward Stripe webhooks**](/cookbook/stripe-webhooks) — HMAC verify, persist, fan-out
 - [**Outbox-backed delivery**](/cookbook/outbox) — durable webhooks with retry + DLQ
 
+## Use Wave alongside your existing stack
+
+- [**React / Next.js + Wave backend**](/cookbook/react-wave) — full integration with cookies, CORS, deploy
+- [**Wave in front of a Node service**](/cookbook/node-gateway) — gateway pattern: auth/rate-limit/audit without touching Node
+- [**Wave as a Python sidekick**](/cookbook/python-sidekick) — wrap a FastAPI / ML service with auth + SSE + tasks
+- [**Migrating from Express incrementally**](/cookbook/migrate-from-express) — route-at-a-time path, no big-bang
+
 ::: tip Browse more demos
 [`examples/apps/INDEX.md`](https://github.com/luowensheng/wave/blob/main/examples/apps/INDEX.md)
 lists all 64 runnable demos — including patterns not yet covered as
