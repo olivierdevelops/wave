@@ -84,6 +84,7 @@ export default defineConfig({
             { text: 'JSON API with SQLite', link: '/cookbook/json-api' },
             { text: 'File uploads & downloads', link: '/cookbook/file-uploads' },
             { text: 'Rate-limit an endpoint', link: '/cookbook/rate-limit' },
+            { text: 'Functional testing (`wave test`)', link: '/cookbook/testing' },
           ],
         },
         {

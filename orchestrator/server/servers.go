@@ -889,10 +889,22 @@ func (s *Server) renderVars() error {
 	return materializeRoutes(s.Config, s.Args)
 }
 
-func (s *Server) Start(ctx context.Context) error {
+// BuildHandler runs every step of the boot pipeline except
+// `srv.ListenAndServe()` and returns the fully-wrapped http.Handler.
+//
+// Used by:
+//   - Start() — wraps the handler in an *http.Server and listens
+//   - `wave test` (via infra/wavetest) — wraps the handler in
+//     httptest.NewServer for in-process functional tests, no port
+//     binding required
+//
+// Safe to call once per *Server. Calling twice will re-register the
+// mux routes (panics on duplicate patterns). For testing, build a
+// fresh Server per test run via servers.NewServer(path).
+func (s *Server) BuildHandler(ctx context.Context) (http.Handler, error) {
 	if s.Config.Build != nil {
 		if err := bundler.Run(*s.Config.Build); err != nil {
-			return fmt.Errorf("frontend build failed: %w", err)
+			return nil, fmt.Errorf("frontend build failed: %w", err)
 		}
 		if s.Config.Build.Watch {
 			bundler.StartWatcher(*s.Config.Build, ctx)
@@ -906,12 +918,12 @@ func (s *Server) Start(ctx context.Context) error {
 
 	err := s.renderVars()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	err = s.InitDependencies()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Phase 4: second-pass secret resolution. Plugins are now built, so
@@ -920,7 +932,7 @@ func (s *Server) Start(ctx context.Context) error {
 	// registry. Must run before downstream features start consuming
 	// the config (storage validate, auth validate, route handlers).
 	if err := s.installSecretsPluginResolver(); err != nil {
-		return err
+		return nil, err
 	}
 
 	// Phase 5: wire the unified Sink (Prometheus + plugin exporter
@@ -928,22 +940,21 @@ func (s *Server) Start(ctx context.Context) error {
 	// them; before validators so any startup events / errors land
 	// somewhere observable.
 	if err := s.bootstrapObservability(); err != nil {
-		return err
+		return nil, err
 	}
 
 	if err := s.validateStorageRefs(); err != nil {
-		return err
+		return nil, err
 	}
 
 	if err := s.validateAuthRefs(); err != nil {
-		return err
+		return nil, err
 	}
 
 	if err := s.resolveAndRegisterAuthPlugins(); err != nil {
-		return err
+		return nil, err
 	}
 
-	address := s.Address
 	args := s.Args
 
 	// common.PrintJSON(common.Object{"INNER": s.Config})
@@ -958,12 +969,12 @@ func (s *Server) Start(ctx context.Context) error {
 	for _, r := range s.Config.Routes {
 		if r.Id == "" {
 			if r.Path == "" {
-				return fmt.Errorf("route with no `path` must declare an `id`")
+				return nil, fmt.Errorf("route with no `path` must declare an `id`")
 			}
 			continue
 		}
 		if _, dup := s.routesById[r.Id]; dup {
-			return fmt.Errorf("duplicate route id: %q", r.Id)
+			return nil, fmt.Errorf("duplicate route id: %q", r.Id)
 		}
 		s.routesById[r.Id] = r
 	}
@@ -979,7 +990,7 @@ func (s *Server) Start(ctx context.Context) error {
 
 		err := route.render(args)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		method := strings.ToUpper(strings.TrimSpace(route.Method))
@@ -998,7 +1009,7 @@ func (s *Server) Start(ctx context.Context) error {
 
 		err = route.setRouteConfig()
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		// Resolve every name in route.Limits against the top-level
@@ -1006,12 +1017,12 @@ func (s *Server) Start(ctx context.Context) error {
 		// This must run before HandleFunc since the middleware chain
 		// reads from the resolved map.
 		if err := route.resolveLimits(s.Config.Limits); err != nil {
-			return fmt.Errorf("route %q: %w", route.Path, err)
+			return nil, fmt.Errorf("route %q: %w", route.Path, err)
 		}
 
 		err = route.Validate()
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		// Library-only routes (id but no path) are validated above
@@ -1023,7 +1034,7 @@ func (s *Server) Start(ctx context.Context) error {
 
 		err = s.HandleFunc(route)
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 
@@ -1045,19 +1056,19 @@ func (s *Server) Start(ctx context.Context) error {
 		dr := s.Config.DefaultRoute
 		dr.Path = "/"
 		if err := dr.render(args); err != nil {
-			return fmt.Errorf("default_route: render: %w", err)
+			return nil, fmt.Errorf("default_route: render: %w", err)
 		}
 		if err := dr.setRouteConfig(); err != nil {
-			return fmt.Errorf("default_route: %w", err)
+			return nil, fmt.Errorf("default_route: %w", err)
 		}
 		if err := dr.resolveLimits(s.Config.Limits); err != nil {
-			return fmt.Errorf("default_route: %w", err)
+			return nil, fmt.Errorf("default_route: %w", err)
 		}
 		if err := dr.Validate(); err != nil {
-			return fmt.Errorf("default_route: %w", err)
+			return nil, fmt.Errorf("default_route: %w", err)
 		}
 		if err := s.HandleFunc(dr); err != nil {
-			return fmt.Errorf("default_route: %w", err)
+			return nil, fmt.Errorf("default_route: %w", err)
 		}
 	} else {
 		// Skip the built-in fallback if the user already claimed "/"
@@ -1100,7 +1111,7 @@ func (s *Server) Start(ctx context.Context) error {
 	// Catch-all for unmatched paths. Registered LAST so the bare "/"
 	// pattern can't shadow any more-specific route registered above.
 	if err := s.registerNotFound(args); err != nil {
-		return err
+		return nil, err
 	}
 
 	if s.Config.JSONDiscoveryRoutePath != "" {
@@ -1186,8 +1197,24 @@ func (s *Server) Start(ctx context.Context) error {
 		loggingMiddleware,
 	)(handler)
 
+	markReady()
+	return handler, nil
+}
+
+// Start builds the handler and then binds to s.Address, blocking
+// until the context is cancelled or a signal arrives.
+//
+// Most callers want this. For functional testing without a port
+// binding, use BuildHandler directly + httptest.NewServer (or the
+// infra/wavetest package's runner).
+func (s *Server) Start(ctx context.Context) error {
+	handler, err := s.BuildHandler(ctx)
+	if err != nil {
+		return err
+	}
+
 	srv := &http.Server{
-		Addr:              address,
+		Addr:              s.Address,
 		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       120 * time.Second,
@@ -1208,7 +1235,8 @@ func (s *Server) Start(ctx context.Context) error {
 		cancel()
 	}()
 
-	markReady()
+	// markReady() already fired at the end of BuildHandler — readiness
+	// reflects "boot complete", not "ListenAndServe entered".
 	if s.Config.HTTPSConfig != nil {
 		if s.Config.HTTPSConfig.Generate && !common.PathExists(s.Config.HTTPSConfig.SSLCertfile) {
 			err = generateHTTPS(s.Config.HTTPSConfig)
@@ -1216,13 +1244,13 @@ func (s *Server) Start(ctx context.Context) error {
 				return err
 			}
 		}
-		log.Printf("Server starting https://%s", address)
+		log.Printf("Server starting https://%s", s.Address)
 		err = srv.ListenAndServeTLS(
 			s.Config.HTTPSConfig.SSLCertfile,
 			s.Config.HTTPSConfig.SSLKeyfile,
 		)
 	} else {
-		log.Printf("Server starting http://%s", address)
+		log.Printf("Server starting http://%s", s.Address)
 		err = srv.ListenAndServe()
 	}
 

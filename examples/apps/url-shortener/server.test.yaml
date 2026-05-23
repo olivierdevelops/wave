@@ -1,0 +1,99 @@
+# wavetest suite for url-shortener.
+#
+# Run from this directory:
+#   wave test server.test.yaml
+#
+# Or from anywhere:
+#   wave test examples/apps/url-shortener/server.test.yaml
+#
+# Or in Go: wavetest.RunFile(ctx, "server.test.yaml")
+
+import: server.yaml
+
+env:
+  # url-shortener doesn't read env vars, but this shows the syntax.
+  # WAVE_TEST_MODE: "true"
+
+tests:
+  - name: built-in /healthz returns JSON with status ok
+    request:
+      method: GET
+      path: /healthz
+    expect:
+      status: 200
+      json:
+        status: ok
+
+  - name: unknown path returns framework 404 envelope
+    request:
+      method: GET
+      path: /nope/never
+    expect:
+      status: 404
+      json:
+        error: page not found
+        path: /nope/never
+
+  - name: POST /shorten validates slug pattern
+    request:
+      method: POST
+      path: /shorten
+      json:
+        slug: x                # too short — pattern ^[A-Za-z0-9_-]{3,32}$
+        url: https://example.com/long
+    expect:
+      status: 400
+
+  - name: POST /shorten validates url min length
+    request:
+      method: POST
+      path: /shorten
+      json:
+        slug: abc
+        url: ""
+    expect:
+      status: 400
+
+  - name: POST /shorten creates a valid link
+    request:
+      method: POST
+      path: /shorten
+      json:
+        slug: helloworld
+        url: https://example.com/some/destination
+    expect:
+      status: 200
+      json:
+        short: /r/helloworld
+    capture:
+      slug: json.short          # /r/helloworld
+
+  - name: GET /links/{slug} returns the persisted row
+    request:
+      method: GET
+      path: /links/helloworld
+    expect:
+      status: 200
+      json:
+        slug: helloworld
+        url:  https://example.com/some/destination
+
+  - name: GET /r/{slug} returns redirect HTML
+    request:
+      method: GET
+      path: /r/helloworld
+    expect:
+      status: 200
+      headers:
+        Content-Type: text/html
+      body_contains: example.com/some/destination
+
+  - name: duplicate slug is rejected
+    request:
+      method: POST
+      path: /shorten
+      json:
+        slug: helloworld         # already exists from above
+        url: https://anywhere.example.com
+    expect:
+      status: 500                # PK constraint violation

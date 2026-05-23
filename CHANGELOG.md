@@ -33,6 +33,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   preflights work on method-bound forward routes.
 
 ### Changed
+- `Server.BuildHandler(ctx)` extracted from `Server.Start` so the
+  full handler chain can be built without binding a port. Used by
+  the new `wave test` command. `Start` now calls `BuildHandler`
+  then wraps in `http.Server` for `ListenAndServe`. Pure code-move
+  — existing tests pass unchanged.
 - `Server.HandleFunc` extracted its middleware chain into a reusable
   `wrapRouteMiddleware` helper so per-case sub-handlers in
   `type: match` carry their own full middleware stack (auth, inputs,
@@ -69,6 +74,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `usecases/match/config_test.go`.
 
 ### CLI
+- `wave test <suite.test.yaml>` — functional test runner. Loads a
+  `.test.yaml`, boots the imported `server.yaml` in-process (no
+  port binding, via the new `Server.BuildHandler` API), and runs
+  YAML-defined request/assert cases against it. Supports `setup`,
+  `tests`, `teardown` phases; variable capture between cases with
+  `{{.var}}` interpolation in path/headers/body/query; strict JSON
+  subset matching with the `"*"` wildcard. `--json` for CI output.
+  Implemented in `infra/wavetest/` with 11 self-tests including an
+  end-to-end test that boots a real Server through BuildHandler.
 - `wave fmt <file.yaml> [--check | --stdout]` — canonicalize YAML
   formatting via yaml.v3 round-trip. `--check` exits non-zero if
   the file would be reformatted (CI / pre-commit hook).

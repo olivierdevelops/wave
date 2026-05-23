@@ -16,6 +16,7 @@ Wave is pre-1.0 and licensed under Apache-2.0. Source: https://github.com/luowen
 - [Quickstart](https://luowensheng.github.io/wave/guide/quickstart): 5-minute working example.
 - [Tutorial](https://luowensheng.github.io/wave/guide/tutorial): Build a todo API end-to-end.
 - [Wave in your stack](https://luowensheng.github.io/wave/guide/wave-in-your-stack): how Wave fits alongside React/Node/Python — BFF / gateway / sidekick / migration patterns.
+- [Functional testing](https://luowensheng.github.io/wave/cookbook/testing): YAML-driven `wave test` suites, in-process server, CI integration.
 
 ## For AI agents (you, the model)
 

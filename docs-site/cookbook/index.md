@@ -9,6 +9,7 @@ Most have a matching runnable demo in
 - [**JSON API with SQLite**](/cookbook/json-api) — CRUD, validation, 404, search
 - [**File uploads & downloads**](/cookbook/file-uploads) — multipart form, served binary
 - [**Rate-limit an endpoint**](/cookbook/rate-limit) — token bucket, by IP or user claim
+- [**Functional testing (`wave test`)**](/cookbook/testing) — YAML test suites, in-process server, CI-ready
 
 ## Auth
 

@@ -6,6 +6,7 @@ import (
 	"github.com/luowensheng/wave/infra/migrate"
 	"github.com/luowensheng/wave/infra/outbox"
 	"github.com/luowensheng/wave/infra/net"
+	"github.com/luowensheng/wave/infra/wavetest"
 	"github.com/luowensheng/wave/orchestrator/scaffold"
 	"github.com/luowensheng/wave/orchestrator/server"
 	"github.com/luowensheng/wave/orchestrator/studio"
@@ -45,6 +46,8 @@ func main() {
 		validate()
 	case "fmt":
 		fmtCmd()
+	case "test":
+		testCmd()
 	case "init":
 		initCmd()
 	case "routes":
@@ -82,6 +85,7 @@ COMMANDS:
   serve <file.yaml>                 Run a server
   serve-live <file.yaml>            Run a server, hot-reload on file change
   validate <file.yaml>              Boot-time config check (no server)
+  test <suite.test.yaml>            Run a functional test suite
   fmt <file.yaml>                   Canonicalize YAML formatting
   routes <file.yaml>                Print the route table (table | json)
   doctor <file.yaml>                Pre-flight diagnostics (live connectivity)
@@ -96,6 +100,7 @@ COMMANDS:
 EXAMPLES:
   wave serve server.yaml --port 8080
   wave validate server.yaml
+  wave test server.test.yaml
   wave init api ./my-project
   wave doctor server.yaml --json
 
@@ -544,6 +549,87 @@ func loadServer() (*servers.Server, error) {
 
 	return server, nil
 
+}
+
+// testCmd runs a wavetest YAML suite against an in-process Wave
+// server (no port binding). Suitable for CI gates and pre-commit
+// hooks.
+//
+//	wave test server.test.yaml
+//	wave test server.test.yaml --json     (machine-readable summary)
+//	wave test server.test.yaml --verbose  (per-case timing + status)
+func testCmd() {
+	if len(os.Args) < 3 {
+		log.Fatal("Usage: wave test <suite.test.yaml> [--json | --verbose]")
+	}
+	jsonOut := false
+	verbose := false
+	suite := ""
+	for _, a := range os.Args[2:] {
+		switch a {
+		case "--json":
+			jsonOut = true
+		case "-v", "--verbose":
+			verbose = true
+		default:
+			if suite == "" {
+				suite = a
+			}
+		}
+	}
+	if suite == "" {
+		log.Fatal("test: a suite path is required (e.g. server.test.yaml)")
+	}
+	absSuite, err := filepath.Abs(suite)
+	if err != nil {
+		log.Fatal(err)
+	}
+	// `wave test` is the only command we run that needs the suite's
+	// directory as cwd so server.yaml relative paths resolve.
+	if err := os.Chdir(filepath.Dir(absSuite)); err != nil {
+		log.Fatal(err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	summary, err := wavetest.RunFile(ctx, absSuite)
+	if err != nil {
+		log.Fatalf("test: %v", err)
+	}
+
+	if jsonOut {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		_ = enc.Encode(summary)
+		if !summary.OK {
+			os.Exit(1)
+		}
+		return
+	}
+
+	// Human-readable. One line per case in non-verbose; verbose adds
+	// per-case errors inline.
+	for _, r := range summary.Results {
+		icon := "PASS"
+		if !r.Passed {
+			icon = "FAIL"
+		}
+		fmt.Printf("  %s [%s] %s (%d, %s)\n",
+			icon, r.Phase, r.Name, r.Status, r.Duration.Round(time.Millisecond))
+		for _, e := range r.Errors {
+			fmt.Printf("       %s\n", e)
+		}
+		if verbose && r.Passed && len(r.Errors) == 0 {
+			// nothing extra to print
+		}
+	}
+	fmt.Println()
+	fmt.Printf("  %d passed, %d failed, %.2fs\n",
+		summary.Passed, summary.Failed, summary.Duration)
+	if !summary.OK {
+		os.Exit(1)
+	}
 }
 
 // fmtCmd canonicalizes the indentation and structure of one or more
