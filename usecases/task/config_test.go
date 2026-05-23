@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -17,35 +18,69 @@ import (
 
 // fakeClient is a test double for plugins.Client.
 type fakeClient struct {
-	called     bool
-	lastReq    *plugins.Request
-	respBody   []byte
-	respErr    error
+	mu       sync.Mutex
+	called   bool
+	lastReq  *plugins.Request
+	respBody []byte
+	respErr  error
 }
 
 func (f *fakeClient) Call(_ context.Context, req *plugins.Request) (*plugins.Response, error) {
+	f.mu.Lock()
 	f.called = true
 	f.lastReq = req
-	if f.respErr != nil {
-		return nil, f.respErr
+	respErr := f.respErr
+	respBody := f.respBody
+	f.mu.Unlock()
+	if respErr != nil {
+		return nil, respErr
 	}
-	return &plugins.Response{Status: 200, Body: f.respBody}, nil
+	return &plugins.Response{Status: 200, Body: respBody}, nil
 }
 
 func (f *fakeClient) Close() error { return nil }
 
-// fakeStorage records Execute calls.
+// wasCalled / capturedReq let tests read state under the lock to
+// avoid racing with the handler goroutine.
+func (f *fakeClient) wasCalled() bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.called
+}
+func (f *fakeClient) capturedReq() *plugins.Request {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.lastReq
+}
+
+// fakeStorage records Execute calls. The mutex protects the slice
+// fields against concurrent access — `type: task` runs the handler
+// goroutine in parallel with the test's polling loop, so without
+// the mutex `-race` flags every test that touches a task store.
 type fakeStorage struct {
-	executed []string
+	mu          sync.Mutex
+	executed    []string
 	dataLoaders []*contentloader.DataLoader
-	result   any
-	err      error
+	result      any
+	err         error
 }
 
 func (f *fakeStorage) Execute(cmd string, dl *contentloader.DataLoader) (any, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.executed = append(f.executed, cmd)
 	f.dataLoaders = append(f.dataLoaders, dl)
 	return f.result, f.err
+}
+
+// executedCopy returns a snapshot of the recorded commands under the
+// lock so test assertions don't race against the handler goroutine.
+func (f *fakeStorage) executedCopy() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]string, len(f.executed))
+	copy(out, f.executed)
+	return out
 }
 
 func setupPluginRegistry(t *testing.T, name string, client plugins.Client) *plugins.Registry {
@@ -148,20 +183,21 @@ func TestCreateRoute_PluginCalledWithBody(t *testing.T) {
 	rr := httptest.NewRecorder()
 	handler(rr, req)
 
-	// Wait for goroutine to call the plugin.
+	// Wait for goroutine to call the plugin (read under lock).
 	deadline := time.Now().Add(2 * time.Second)
-	for !fc.called && time.Now().Before(deadline) {
+	for !fc.wasCalled() && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	if !fc.called {
+	if !fc.wasCalled() {
 		t.Fatal("plugin was not called")
 	}
-	if fc.lastReq.TriggerKey != "process" {
-		t.Errorf("expected trigger_key 'process', got %q", fc.lastReq.TriggerKey)
+	captured := fc.capturedReq()
+	if captured.TriggerKey != "process" {
+		t.Errorf("expected trigger_key 'process', got %q", captured.TriggerKey)
 	}
-	if string(fc.lastReq.Body) != body {
-		t.Errorf("expected body %q, got %q", body, string(fc.lastReq.Body))
+	if string(captured.Body) != body {
+		t.Errorf("expected body %q, got %q", body, string(captured.Body))
 	}
 }
 
@@ -237,17 +273,18 @@ func TestCreateRoute_StoreWrites(t *testing.T) {
 	rr := httptest.NewRecorder()
 	handler(rr, req)
 
-	// Wait for goroutine to finish.
+	// Wait for goroutine to finish (read under lock to avoid race).
 	deadline := time.Now().Add(2 * time.Second)
-	for len(fs.executed) == 0 && time.Now().Before(deadline) {
+	for len(fs.executedCopy()) == 0 && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	if len(fs.executed) == 0 {
+	executed := fs.executedCopy()
+	if len(executed) == 0 {
 		t.Fatal("storage.Execute was not called")
 	}
-	if fs.executed[0] != "INSERT INTO results (content) VALUES ({{content}})" {
-		t.Errorf("unexpected execute: %q", fs.executed[0])
+	if executed[0] != "INSERT INTO results (content) VALUES ({{content}})" {
+		t.Errorf("unexpected execute: %q", executed[0])
 	}
 }
 
@@ -321,17 +358,18 @@ func TestCreateRoute_EventNamespace(t *testing.T) {
 	rr := httptest.NewRecorder()
 	handler(rr, req)
 
-	// Wait for the goroutine to finish.
+	// Wait for the goroutine to finish (read under lock to avoid race).
 	deadline := time.Now().Add(2 * time.Second)
-	for len(fs.executed) == 0 && time.Now().Before(deadline) {
+	for len(fs.executedCopy()) == 0 && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	if len(fs.executed) == 0 {
+	executed := fs.executedCopy()
+	if len(executed) == 0 {
 		t.Fatal("storage.Execute was not called")
 	}
-	if fs.executed[0] != sqlTemplate {
-		t.Errorf("unexpected execute SQL: got %q, want %q", fs.executed[0], sqlTemplate)
+	if executed[0] != sqlTemplate {
+		t.Errorf("unexpected execute SQL: got %q, want %q", sqlTemplate, executed[0])
 	}
 }
 

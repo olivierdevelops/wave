@@ -39,7 +39,9 @@ jobs:
           chmod +x docs-site/public/install.sh
       - name: Install
         working-directory: docs-site
-        run: npm install
+        # Use `npm ci` (reproducible, lockfile-driven) instead of
+        # `npm install` (which mutates the lockfile).
+        run: npm ci
       - name: Build
         working-directory: docs-site
         run: npm run docs:build

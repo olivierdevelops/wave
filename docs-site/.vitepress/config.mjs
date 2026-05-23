@@ -158,4 +158,20 @@ export default defineConfig({
 
     search: { provider: 'local' },
   },
+
+  // Wave docs contain many `{{name}}` SQL-template fragments inline,
+  // which VitePress would otherwise try to evaluate as Vue mustaches.
+  // Wrap every inline-code token in <span v-pre> so Vue skips it.
+  // Fenced code blocks (```) are already safe — this only fixes
+  // single-backtick inline code.
+  markdown: {
+    config: (md) => {
+      const defaultInlineCode = md.renderer.rules.code_inline
+        || ((tokens, idx, opts, env, self) => self.renderToken(tokens, idx, opts))
+      md.renderer.rules.code_inline = (tokens, idx, opts, env, self) => {
+        const rendered = defaultInlineCode(tokens, idx, opts, env, self)
+        return `<span v-pre>${rendered}</span>`
+      }
+    },
+  },
 })
