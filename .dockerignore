@@ -1,0 +1,32 @@
+# Docker build context — keep small to speed up builds.
+
+# Git, IDE, local state
+.git
+.github
+.vscode
+.idea
+.claude
+.ignore
+
+# Build outputs / caches
+dist
+docs-site/.vitepress/cache
+docs-site/.vitepress/dist
+docs-site/node_modules
+node_modules
+*.test
+*.out
+coverage.out
+
+# Demo artifacts (regenerated on demo boot)
+examples/apps/*/*.db
+examples/apps/*/data/
+
+# Docs site is built separately and deployed to GitHub Pages —
+# the binary doesn't need it.
+docs-site
+
+# Editor swap files
+*.swp
+*~
+.DS_Store

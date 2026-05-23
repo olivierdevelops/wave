@@ -1,0 +1,214 @@
+# goreleaser configuration.
+# Triggered by `.github/workflows/release.yml` on `git tag v*` push.
+#
+# Locally:
+#   goreleaser release --snapshot --clean    # dry-run, no publish
+#
+# Conventions:
+#   - Binaries are tagged `nosqlite` so cross-builds don't need CGO.
+#     Built-in SQLite users should `go install` from source or run
+#     the Docker image (which IS built with CGO).
+#   - Sign artifacts with cosign via sigstore keyless OIDC (no keys
+#     to manage; the workflow's OIDC token is used at release time).
+#   - SBOM via syft attached to the GitHub Release as a separate file.
+#   - Docker image built with CGO + sqlite, published to GHCR.
+
+version: 2
+
+project_name: wave
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: wave
+    main: ./orchestrator
+    binary: wave
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+      - -tags=nosqlite
+    ldflags:
+      - -s -w
+      - -X main.version={{ .Version }}
+      - -X main.commit={{ .ShortCommit }}
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    ignore: []
+
+archives:
+  - id: wave
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_
+      {{- if eq .Os "darwin" }}macOS
+      {{- else }}{{ title .Os }}{{ end }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else }}{{ .Arch }}{{ end }}
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - README.md
+      - LICENSE
+      - NOTICE
+      - CHANGELOG.md
+
+checksum:
+  name_template: 'checksums.txt'
+
+snapshot:
+  name_template: '{{ incpatch .Version }}-next'
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude:
+      - '^test:'
+      - '^chore:'
+      - '^docs:'
+      - '^ci:'
+      - Merge pull request
+      - Merge branch
+
+# --- Signing ----------------------------------------------------------
+# Sigstore keyless signing — works without managing private keys.
+# The workflow's OIDC token identifies the release; cosign verify
+# checks the cert chain against Fulcio. See SECURITY.md for the
+# verification command users can run.
+signs:
+  - id: cosign
+    cmd: cosign
+    certificate: '${artifact}.pem'
+    args:
+      - sign-blob
+      - '--output-certificate=${certificate}'
+      - '--output-signature=${signature}'
+      - '${artifact}'
+      - '--yes'
+    artifacts: checksum
+    output: true
+
+# --- SBOM -------------------------------------------------------------
+# Software Bill of Materials via syft. Attached to the GitHub Release
+# alongside the binaries.
+sboms:
+  - id: spdx
+    artifacts: archive
+    cmd: syft
+    args:
+      - '$artifact'
+      - '--output'
+      - 'spdx-json=$document'
+    documents:
+      - '${artifact}.spdx.json'
+
+# --- Docker -----------------------------------------------------------
+# Multi-arch Docker image published to GHCR. Uses Buildx for amd64
+# + arm64. CGO + SQLite are enabled in the Dockerfile, so the image
+# IS sqlite-capable (unlike the nosqlite binaries).
+dockers:
+  - id: wave-amd64
+    image_templates:
+      - 'ghcr.io/luowensheng/wave:{{ .Version }}-amd64'
+      - 'ghcr.io/luowensheng/wave:latest-amd64'
+    dockerfile: Dockerfile
+    use: buildx
+    goarch: amd64
+    build_flag_templates:
+      - --platform=linux/amd64
+      - --build-arg=VERSION={{ .Version }}
+      - --build-arg=COMMIT={{ .ShortCommit }}
+      - --label=org.opencontainers.image.title=wave
+      - --label=org.opencontainers.image.description=Declarative HTTP server framework
+      - --label=org.opencontainers.image.url=https://github.com/luowensheng/wave
+      - --label=org.opencontainers.image.source=https://github.com/luowensheng/wave
+      - --label=org.opencontainers.image.version={{ .Version }}
+      - --label=org.opencontainers.image.revision={{ .FullCommit }}
+      - --label=org.opencontainers.image.licenses=Apache-2.0
+
+  - id: wave-arm64
+    image_templates:
+      - 'ghcr.io/luowensheng/wave:{{ .Version }}-arm64'
+      - 'ghcr.io/luowensheng/wave:latest-arm64'
+    dockerfile: Dockerfile
+    use: buildx
+    goarch: arm64
+    build_flag_templates:
+      - --platform=linux/arm64
+      - --build-arg=VERSION={{ .Version }}
+      - --build-arg=COMMIT={{ .ShortCommit }}
+      - --label=org.opencontainers.image.version={{ .Version }}
+      - --label=org.opencontainers.image.revision={{ .FullCommit }}
+      - --label=org.opencontainers.image.licenses=Apache-2.0
+
+docker_manifests:
+  - name_template: 'ghcr.io/luowensheng/wave:{{ .Version }}'
+    image_templates:
+      - 'ghcr.io/luowensheng/wave:{{ .Version }}-amd64'
+      - 'ghcr.io/luowensheng/wave:{{ .Version }}-arm64'
+  - name_template: 'ghcr.io/luowensheng/wave:latest'
+    image_templates:
+      - 'ghcr.io/luowensheng/wave:latest-amd64'
+      - 'ghcr.io/luowensheng/wave:latest-arm64'
+
+# --- Homebrew ---------------------------------------------------------
+# Auto-updates a homebrew tap repo on release. The tap repo
+# `luowensheng/homebrew-wave` must exist; the PAT in
+# `HOMEBREW_TAP_TOKEN` (set in repo secrets) needs write access to it.
+# Comment out this block until the tap repo + token are configured.
+#
+# brews:
+#   - name: wave
+#     repository:
+#       owner: luowensheng
+#       name: homebrew-wave
+#       token: '{{ .Env.HOMEBREW_TAP_TOKEN }}'
+#     directory: Formula
+#     homepage: https://github.com/luowensheng/wave
+#     description: Declarative HTTP server framework — define your backend in YAML.
+#     license: Apache-2.0
+#     test: |
+#       system "#{bin}/wave", "version"
+
+# --- Release ----------------------------------------------------------
+release:
+  github:
+    owner: luowensheng
+    name: wave
+  draft: false
+  prerelease: auto
+  mode: replace
+  name_template: '{{ .ProjectName }} {{ .Version }}'
+  header: |
+    Wave {{ .Version }} — see [CHANGELOG.md](https://github.com/luowensheng/wave/blob/main/CHANGELOG.md).
+
+    ## Install
+
+    ```sh
+    # macOS / Linux
+    curl -sSfL https://github.com/luowensheng/wave/releases/download/{{ .Tag }}/wave_{{ .Version }}_$(uname -s)_$(uname -m).tar.gz \
+      | tar -xz -C /usr/local/bin
+
+    # Docker (with built-in SQLite)
+    docker pull ghcr.io/luowensheng/wave:{{ .Version }}
+
+    # Go install (latest main, with SQLite)
+    go install github.com/luowensheng/wave/orchestrator@{{ .Tag }}
+    ```
+
+    ## Verify
+
+    ```sh
+    # Checksums signed via sigstore (keyless OIDC, no keys to manage)
+    cosign verify-blob --certificate-identity-regexp='https://github.com/luowensheng/wave/' \
+      --certificate-oidc-issuer='https://token.actions.githubusercontent.com' \
+      --certificate checksums.txt.pem --signature checksums.txt.sig checksums.txt
+    ```
+
+    > Note: the binaries are built with `-tags=nosqlite` for cross-platform
+    > simplicity. For built-in SQLite, use the Docker image or `go install`.
+  footer: |
+    **Full changelog:** https://github.com/luowensheng/wave/blob/main/CHANGELOG.md

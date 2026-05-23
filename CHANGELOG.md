@@ -80,6 +80,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   short commit hash. Defaults to `dev/none` on local builds; CI
   injects `${GITHUB_REF_NAME}` and the short SHA via ldflags.
 
+### Release engineering
+- `.goreleaser.yml`: 5-platform build matrix
+  (linux/darwin/windows × amd64/arm64), archives with checksums.
+  Cosign keyless signing via sigstore OIDC (no key management).
+  SBOM via syft attached to releases. Multi-arch Docker images
+  published to ghcr.io/luowensheng/wave on every tag.
+- `.github/workflows/release.yml`: triggered on `git tag v*`, runs
+  goreleaser end-to-end (build, sign, SBOM, GHCR push, GitHub
+  Release with formatted notes).
+- `install.sh` at repo root: POSIX shell script that detects
+  OS/arch, downloads the matching tarball from the latest GitHub
+  Release, and installs to `/usr/local/bin`. Pinnable via
+  `WAVE_VERSION=v0.1.0` or `sh -s -- v0.1.0`.
+- `Dockerfile` hardened: distroless nonroot base, multi-stage,
+  `VERSION` / `COMMIT` build args wired to `wave version` output.
+  HEALTHCHECK removed (distroless has no shell — orchestrators
+  define their own probes against /healthz).
+- `.dockerignore`: trim build context for faster Docker builds.
+
 ### Documentation
 - VitePress docs site under `docs-site/`, auto-deployed to
   https://luowensheng.github.io/wave/ on push to main.
