@@ -65,7 +65,12 @@ you will not produce broken `server.capy`.
 7. **Outcomes are pattern-matched.** `case error(err)`, `case empty`,
    `case found(data)`, `case success(info)`. You don't have to handle
    every case — unhandled `error` becomes a 500 by default.
-8. **`wave check server.capy`** parses + validates. Run it after every
+8. **File extension is `.capy` or `.wave`** — both load identically.
+   `.capy` is the language; `.wave` is a friendlier alias because the
+   product is Wave. Anything else (`.yaml`/`.yml`/`.json`) is passed
+   straight to the YAML loader; capy syntax in a non-capy extension
+   will fail to parse.
+9. **`wave check server.capy`** parses + validates. Run it after every
    non-trivial edit. It catches missing inputs, broken matches,
    unknown storages, and migration drift before the server boots.
 

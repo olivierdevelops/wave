@@ -12,6 +12,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`.wave` file extension** now loads as capy alongside `.capy`.
+  `infra/capyhost.ReadConfig` routes both extensions through the capy
+  transpiler; `.yaml`/`.yml`/`.json` continue to pass through as-is.
+  Resolves the common confusion where users named their config
+  `server.wave` (matching the product name) and got a YAML parse
+  error from the fallback loader. Case-insensitive. No semantic
+  difference between the two — pick whichever extension reads better.
+  Regression covered by `infra/capyhost/read_config_test.go`
+  (extension matrix, rich-syntax smoke, missing-file pass-through,
+  `isCapyExt` surface).
 - `type: match` — declarative request router that dispatches a single
   path to one of several nested routes based on predicates (method,
   header, cookie, query, host, IP, path var). Supports `equals`,
