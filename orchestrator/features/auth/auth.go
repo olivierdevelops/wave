@@ -2,10 +2,10 @@
 package auth
 
 import (
-	"github.com/luowensheng/wave/domain"
-	"github.com/luowensheng/wave/infra/cookies"
-	infrajwt "github.com/luowensheng/wave/infra/jwt"
-	"github.com/luowensheng/wave/infra/sessions"
+	"github.com/olivierdevelops/wave/domain"
+	"github.com/olivierdevelops/wave/infra/cookies"
+	infrajwt "github.com/olivierdevelops/wave/infra/jwt"
+	"github.com/olivierdevelops/wave/infra/sessions"
 	"net/http"
 	"os"
 	"strings"
@@ -186,12 +186,27 @@ const (
 	OriginalRequestKey contextKey = "original_request"
 )
 
+// IsBrowserRequest reports whether the request is a top-level
+// browser navigation — i.e., one whose response the user expects to
+// render as a page.
+//
+// We gate on Accept: text/html only. The previous implementation
+// also fell back to a `User-Agent` substring match ("Mozilla"), but
+// every browser-issued fetch()/XHR call carries the same UA, so that
+// check misclassified SPA JSON requests as page navigations and led
+// to spurious 302→/login redirects whose Location header an SPA
+// can't sensibly follow.
+//
+// Callers should additionally check `r.Method == http.MethodGet`
+// for redirect targets — POST/PUT/DELETE to a protected endpoint
+// should always get a JSON 401 even when the client is a browser.
 func IsBrowserRequest(r *http.Request) bool {
-	acceptHeader := r.Header.Get("Accept")
-	userAgent := r.Header.Get("User-Agent")
-
-	return strings.Contains(acceptHeader, "text/html") ||
-		strings.Contains(userAgent, "Mozilla")
+	for _, v := range r.Header.Values("Accept") {
+		if strings.Contains(v, "text/html") {
+			return true
+		}
+	}
+	return false
 }
 
 const StorageDir = "./db_storage"
