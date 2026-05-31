@@ -13,13 +13,9 @@ Always registered, no config required:
 | `GET /readyz` | 503 until all storages, plugins, and connections are reachable |
 | `GET /version` | binary version + commit (set via ldflags) |
 
-Use these as liveness/readiness probes:
-
-```yaml
-# Kubernetes
-livenessProbe:  { httpGet: { path: /healthz, port: 8080 } }
-readinessProbe: { httpGet: { path: /readyz,  port: 8080 } }
-```
+Use these as liveness/readiness probes. In Kubernetes, point
+`livenessProbe` at `/healthz` and `readinessProbe` at `/readyz` on the
+container port — both `httpGet` checks, no extra config needed.
 
 ## Prometheus metrics
 
@@ -38,30 +34,26 @@ and histograms emitted out of the box:
 | `wave_outbox_dlq_total` | — | dead-letter count |
 | `wave_sse_subscribers` | broker | connected SSE clients |
 
-Scrape with:
-
-```yaml
-# prometheus.yml
-scrape_configs:
-  - job_name: wave
-    static_configs:
-      - targets: ['wave:8080']
-```
+Scrape it from Prometheus by adding a `wave` job that targets the
+container's port 8080. Static target, no auth, no extras —
+`/metrics` is open on the same listener as the rest of the server.
 
 ## OpenTelemetry traces
 
 Spans emitted automatically per route, including downstream HTTP
-calls and SQL queries. Configure the OTLP exporter:
+calls and SQL queries. Configure the OTLP exporter in the top-level
+`observability` block:
 
-```yaml
-# server.yaml
-otel:
-  endpoint: "${env:OTEL_EXPORTER_OTLP_ENDPOINT}"   # e.g. http://otel-collector:4318
-  service_name: my-wave-app
-  sample_rate: 0.1                                   # 10% sampling
+```capy
+# server.capy
+observability
+    otel
+        endpoint     "{{secret otel_endpoint}}"   # e.g. http://otel-collector:4318
+        service_name "my-wave-app"
+        sample_rate  0.1                            # 10% sampling
 ```
 
-See [`otel-tracing-demo`](https://github.com/luowensheng/wave/tree/main/examples/apps/otel-tracing-demo)
+See [`otel-tracing-demo`](https://github.com/olivierdevelops/wave/tree/main/examples/apps/otel-tracing-demo)
 for a full pipeline with Jaeger.
 
 ## Structured logs
@@ -93,21 +85,34 @@ Set `LOG_LEVEL=debug` for verbose handler-level traces. Set
 ## Audit log
 
 Distinct from regular logs — this is your durable, queryable
-record of state-changing events. Add `audit:` to a route to emit:
+record of state-changing events. Write the audit row in the same SQL
+statement as the mutation — one transaction, no chance of drift:
 
-```yaml
-- path: /admin/users/{id}
-  method: DELETE
-  type: storage-access
-  auth: [primary]
-  audit: { action: "user.delete", target_input: id }
-  storage-access: { ... }
+```capy
+route "/admin/users/{id}"
+    methods DELETE
+    requires_authentication primary
+    request
+        path_parameter id
+            type     integer
+            required true
+    do
+        result = on app do sql `
+            INSERT INTO audit_log (actor, action, target, ip, at)
+            VALUES ({{auth.user.id}}, 'user.delete', 'user:' || {{request.id}}, {{client_ip}}, {{now}});
+            DELETE FROM users WHERE id = {{request.id}}
+        `
+        match result
+            case success(info)
+                response
+                    status       200
+                    content_type "application/json"
+                    body         `{"deleted":{{info.rows_affected}}}`
 ```
 
-The audit subsystem emits one row per mutation, with the
-authenticated user, IP, timestamp, action name, and target
-identifier. Persist to a dedicated storage backend via the
-[audit log recipe](/cookbook/audit-log).
+The audit row records the authenticated user (`{{auth.user.id}}`), the
+client IP (`{{client_ip}}`), a timestamp, the action, and the target —
+all bound parameters. See the [audit log recipe](/cookbook/audit-log).
 
 ## Plugin-based exporter fanout
 
@@ -117,7 +122,7 @@ broadcasts each event to every registered exporter plugin
 concurrently — Prometheus AND your Datadog/Honeycomb/SaaS at the
 same time.
 
-See [`exporter-plugins.md`](https://github.com/luowensheng/wave/blob/main/docs/exporter-plugins.md).
+See [`exporter-plugins.md`](https://github.com/olivierdevelops/wave/blob/main/docs/exporter-plugins.md).
 
 ## Production checklist
 
@@ -132,6 +137,6 @@ See [`exporter-plugins.md`](https://github.com/luowensheng/wave/blob/main/docs/e
 
 ## See also
 
-- Demo: [`otel-tracing-demo`](https://github.com/luowensheng/wave/tree/main/examples/apps/otel-tracing-demo)
+- Demo: [`otel-tracing-demo`](https://github.com/olivierdevelops/wave/tree/main/examples/apps/otel-tracing-demo)
 - [Audit log recipe](/cookbook/audit-log)
 - [Production checklist](/guide/deploy-checklist)

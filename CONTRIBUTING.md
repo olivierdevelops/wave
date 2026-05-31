@@ -11,12 +11,12 @@ This guide covers everything you need to land your first change.
 
 ```bash
 # Clone & build
-git clone https://github.com/luowensheng/wave.git
+git clone https://github.com/olivierdevelops/wave.git
 cd wave
 go build ./...
 
 # Run an example
-go run ./orchestrator serve examples/apps/url-shortener/server.yaml --port 8102
+go run ./orchestrator serve examples/apps/url-shortener/server.capy --listen :8102
 curl http://localhost:8102/healthz
 
 # Run the test suite
@@ -54,7 +54,7 @@ fields:
 
 - **Bug** → reproduction steps + expected vs actual behavior
 - **Feature** → use case first, proposed solution second
-- **Question** → consider [GitHub Discussions](https://github.com/luowensheng/wave/discussions) instead if it's open-ended
+- **Question** → consider [GitHub Discussions](https://github.com/olivierdevelops/wave/discussions) instead if it's open-ended
 
 Before filing, search existing issues — duplicates are common on
 fast-moving projects.
@@ -94,7 +94,7 @@ commit message.
 - New code has tests (`*_test.go`). Bug fixes have regression tests.
 - `go vet ./...` clean
 - `go test ./... -race` passes
-- If you touched YAML behavior, an `examples/apps/*/server.yaml` covers it
+- If you touched capy/config behavior, an `examples/apps/*/server.capy` covers it
 - New route types follow the 5-step checklist in CLAUDE.md
 
 **For larger changes:** open an issue or Discussion *first* so we can
@@ -144,7 +144,7 @@ Plugins are out-of-process binaries that speak a small JSON contract.
 See [docs/plugins.md](docs/plugins.md) for the full contract.
 
 A plugin template repo lives at
-`github.com/luowensheng/wave-plugin-template` — fork it, change the
+`github.com/olivierdevelops/wave-plugin-template` — fork it, change the
 business logic, ship.
 
 ---
@@ -160,8 +160,18 @@ We follow standard Go idioms. From [CLAUDE.md](CLAUDE.md):
 - Exported symbols need doc comments.
 - No `init()` functions — wire explicitly.
 - No `log.Fatal` in `usecases/` — return errors.
-- Struct tags `yaml:"…"` + `json:"…"` on every field with `omitempty`
-  unless the zero value is meaningful.
+- Struct tags `capy:"…"` + `json:"…"` on every field with `omitempty`
+  unless the zero value is meaningful. (capy is the on-disk format;
+  json is for the wire / plugin contract.)
+- **Never mutate user-provided config slices** (`Route.Methods`,
+  `Route.RequireRoles`, `Plugin.Headers`, etc.) inside middleware or
+  registration code. Build the derived value into a fresh local
+  slice. Downstream code (boot-time guards, doctor diagnostics, the
+  describe output) treats the original Config as the source of truth
+  and silently breaks when those slices grow underneath it. The
+  `route_methods_test.go` regression in `orchestrator/server/`
+  documents one concrete case (`Route.Methods` mutation triggered a
+  duplicate `/` panic).
 
 Run `gofmt` (or let your editor handle it) before committing.
 
@@ -177,7 +187,7 @@ git push origin v0.1.0
 ```
 
 The release workflow handles the rest: signed binaries, SBOM, Docker
-image, Homebrew formula update. See `.github/workflows/release.yml`.
+image, Homebrew formula update.
 
 ---
 

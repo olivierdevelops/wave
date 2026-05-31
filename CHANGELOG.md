@@ -54,6 +54,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - `infra/common/common.go`: unreachable code after early return in
   `LoadObjectFromFile` (caught by `go vet`).
+- **Route registration panic on duplicate `/`.**
+  `orchestrator/server/servers.go` `wrapRouteMiddleware` mutated
+  `route.Methods` via `append(route.Methods, route.Method)` during
+  middleware wrapping, leaving the caller's slice permanently grown
+  and (combined with overly narrow `hasRoot` detection) making the
+  Bootstrap fallback re-register `/` and panic with
+  `http: multiple registrations`. Fixed: build the allow-list from a
+  local slice with dedup, never touching `route.Methods`; and broaden
+  `hasRoot` to match on `Path == "/"` regardless of how `Method` /
+  `Methods` are filled. Regression covered by
+  `orchestrator/server/route_methods_test.go` (7 subtests across no-
+  mutation, idempotent re-wraps, allow-list semantics, hasRoot
+  shapes, and two-routes-at-root).
+- **Auth-failure 302→login wrongly fired for SPA `fetch()` calls.**
+  `orchestrator/features/auth/auth.go` `IsBrowserRequest` previously
+  returned true when the User-Agent contained `"Mozilla"`, which
+  every browser-issued `fetch()` does — so a SPA `fetch('/protected-
+  api')` with `Accept: application/json` was misclassified as a page
+  navigation, got a 302 to `/login`, and an SPA expecting JSON 401
+  followed the redirect into a broken state. Fixed: gate solely on
+  `Accept: text/html` (multi-value-aware). Browser top-level
+  navigation (GET + `Accept: text/html`) still 302s; everything else
+  (SPA fetch, curl, browser POST/PUT/DELETE) gets the JSON 401 the
+  client expects. Regression covered by
+  `orchestrator/features/auth/browser_request_test.go` (21 assertions
+  across 7 test functions including methods × accept-shapes matrix).
 
 ### Security
 - The strict-scope DataLoader path ensures every SQL value goes through
@@ -74,10 +100,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `usecases/match/config_test.go`.
 
 ### CLI
-- `wave test <suite.test.yaml>` — functional test runner. Loads a
-  `.test.yaml`, boots the imported `server.yaml` in-process (no
+- `wave test <suite.test.capy>` — functional test runner. Loads a
+  `.test.capy`, boots the imported `server.capy` in-process (no
   port binding, via the new `Server.BuildHandler` API), and runs
-  YAML-defined request/assert cases against it. Supports `setup`,
+  capy-defined request/assert cases against it. Supports `setup`,
   `tests`, `teardown` phases; variable capture between cases with
   `{{.var}}` interpolation in path/headers/body/query; strict JSON
   subset matching with the `"*"` wildcard. `--json` for CI output,
@@ -87,15 +113,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the pass/fail report and `--json` envelope are clean. CI-safe
   exit codes: 0 = all pass, 1 = test failures, 2 = bad invocation.
   Three runnable suites ship with the framework:
-  `examples/apps/{url-shortener,kv-store,pastebin}/server.test.yaml`
+  `examples/apps/{url-shortener,kv-store,pastebin}/server.test.capy`
   totalling 22 cases that cover validation, capture+interpolate,
   raw-body upload, teardown, and PK-violation 500s.
   Go embedding API: `wavetest.RunFile` (logs visible, fits
   `go test -v`) or `wavetest.RunFileWithOptions{Quiet: true}` for
   silent runs. 12 self-tests in `infra/wavetest/` including an
   end-to-end test that boots a real Server through BuildHandler.
-- `wave fmt <file.yaml> [--check | --stdout]` — canonicalize YAML
-  formatting via yaml.v3 round-trip. `--check` exits non-zero if
+- `wave fmt <file.capy> [--check | --stdout]` — canonicalize capy
+  formatting via a parse + re-emit round-trip. `--check` exits non-zero if
   the file would be reformatted (CI / pre-commit hook).
 - `wave doctor --json` — machine-readable doctor output for CI.
 - `wave completion bash|zsh|fish` — shell completion scripts with
@@ -106,14 +132,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   injects `${GITHUB_REF_NAME}` and the short SHA via ldflags.
 
 ### Release engineering
-- `.goreleaser.yml`: 5-platform build matrix
+- Goreleaser config: 5-platform build matrix
   (linux/darwin/windows × amd64/arm64), archives with checksums.
   Cosign keyless signing via sigstore OIDC (no key management).
   SBOM via syft attached to releases. Multi-arch Docker images
-  published to ghcr.io/luowensheng/wave on every tag.
-- `.github/workflows/release.yml`: triggered on `git tag v*`, runs
-  goreleaser end-to-end (build, sign, SBOM, GHCR push, GitHub
-  Release with formatted notes).
+  published to ghcr.io/olivierdevelops/wave on every tag.
+- Release workflow: triggered on `git tag v*`, runs goreleaser
+  end-to-end (build, sign, SBOM, GHCR push, GitHub Release with
+  formatted notes).
 - `install.sh` at repo root: POSIX shell script that detects
   OS/arch, downloads the matching tarball from the latest GitHub
   Release, and installs to `/usr/local/bin`. Pinnable via
@@ -126,7 +152,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 - VitePress docs site under `docs-site/`, auto-deployed to
-  https://luowensheng.github.io/wave/ on push to main.
+  https://olivierdevelops.github.io/wave/ on push to main.
 - Cookbook recipes for JSON API, multi-tenant routing, device
   detection, and CORS preflight.
 - Comparison page (vs Gin, Echo, Caddy, Express, Fastify, FastAPI,
@@ -168,5 +194,5 @@ Initial public release.
 ### Examples
 - 57 runnable demo applications under `examples/apps/`.
 
-[Unreleased]: https://github.com/luowensheng/wave/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/luowensheng/wave/releases/tag/v0.1.0
+[Unreleased]: https://github.com/olivierdevelops/wave/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/olivierdevelops/wave/releases/tag/v0.1.0
