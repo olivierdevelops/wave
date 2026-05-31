@@ -21,15 +21,15 @@ func TestCompositionExample_E2E(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chdir(cwd) })
 
 	// Library file refuses to boot as a server.
-	if _, err := NewServer(filepath.Join(base, "shared", "app-db.yaml")); err == nil ||
+	if _, err := NewServer(filepath.Join(base, "shared", "app-db.capy")); err == nil ||
 		!strings.Contains(err.Error(), "is a kind:storage library, not a server") {
 		t.Fatalf("expected library-as-server rejection, got %v", err)
 	}
 
 	// Host app composes both modules.
-	srv, err := NewServer(filepath.Join(base, "app.yaml"))
+	srv, err := NewServer(filepath.Join(base, "app.capy"))
 	if err != nil {
-		t.Fatalf("NewServer(app.yaml): %v", err)
+		t.Fatalf("NewServer(app.capy): %v", err)
 	}
 	cfg := srv.Config
 

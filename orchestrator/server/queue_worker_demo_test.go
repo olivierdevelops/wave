@@ -6,11 +6,11 @@ import (
 )
 
 // TestQueueWorkerDemo_Parses verifies that the queue-worker-demo
-// server.yaml loads cleanly into the Config struct. This catches
+// server.capy loads cleanly into the Config struct. This catches
 // breakage when sink/action shapes change — the demo file is a
 // canary that the new for_each + api sink syntax stays valid.
 func TestQueueWorkerDemo_Parses(t *testing.T) {
-	demoPath := filepath.Join("..", "..", "examples", "apps", "queue-worker-demo", "server.yaml")
+	demoPath := filepath.Join("..", "..", "examples", "apps", "queue-worker-demo", "server.capy")
 	// Load through loadConfig so the two-phase resolver populates the
 	// typed resource maps (requests/etc.) the way `wave serve` does.
 	cfgPtr, err := loadConfig(demoPath)
